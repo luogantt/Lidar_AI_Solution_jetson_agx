@@ -4,7 +4,7 @@
 
 
 // Copyright (c) ONNX Project Contributors.
-// Licensed under the MIT license.
+// Licensed under the Apache-2.0 license.
 
 syntax = "proto2";
 
@@ -132,5 +132,5 @@ message OperatorSetProto {
 
 
 // For using protobuf-lite
-// option optimize_for = LITE_RUNTIME;
+option optimize_for = LITE_RUNTIME;
 

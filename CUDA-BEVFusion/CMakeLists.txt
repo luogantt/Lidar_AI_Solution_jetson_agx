@@ -22,6 +22,19 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(bevfusion)
 
+
+# 强制 Protobuf 使用动态库（添加在文件最顶部）
+set(Protobuf_USE_STATIC_LIBS OFF)
+set(Protobuf_USE_SHARED_LIBS ON)
+
+# 显式指定 Protobuf 动态库路径（兜底）
+find_library(PROTOBUF_SHARED_LIB protobuf PATHS /usr/local/lib NO_DEFAULT_PATH)
+if(NOT PROTOBUF_SHARED_LIB)
+    message(FATAL_ERROR "Protobuf dynamic library not found!")
+endif()
+
+
+
 set(CMAKE_BUILD_PYTHON $ENV{USE_Python})
 set(CMAKE_BUILD_TYPE "Release")
 # set(CMAKE_BUILD_TYPE "Debug")
@@ -48,8 +61,11 @@ set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}
   -gencode arch=compute_$ENV{CUDASM},code=compute_$ENV{CUDASM}
 )
 
+
+#include_directories(${CMAKE_SOURCE_DIR}/include/stb)
 include_directories(
   ${Protobuf_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/include/stb
   $ENV{CUDA_Inc}
   $ENV{TensorRT_Inc}
   $ENV{Python_Inc}

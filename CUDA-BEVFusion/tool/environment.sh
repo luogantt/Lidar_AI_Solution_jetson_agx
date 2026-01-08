@@ -22,16 +22,24 @@
 
 # export CUDA_VISIBLE_DEVICES=2
 
-export TensorRT_Lib=/path/to/tensorrt/lib
-export TensorRT_Inc=/path/to/tensorrt/include
-export TensorRT_Bin=/path/to/tensorrt/bin
+# change the path to the directory you are currently using
+# ========== TensorRT 路径（基于你的find命令结果）==========
+export TensorRT_Lib=/usr/lib/aarch64-linux-gnu
+export TensorRT_Inc=/usr/include/aarch64-linux-gnu
+export TensorRT_Bin=/usr/src/tensorrt/bin # Jetson默认TensorRT工具（如trtexec）所在路径
 
+
+# ========== CUDA 路径（Jetson标准软链接路径）==========
+export CUDA_Lib=/usr/local/cuda/lib64
+export CUDA_Inc=/usr/local/cuda/include
+export CUDA_Bin=/usr/local/cuda/bin
 export CUDA_HOME=/usr/local/cuda
-export CUDA_Lib=$CUDA_HOME/lib64
-export CUDA_Inc=$CUDA_HOME/include
-export CUDA_Bin=$CUDA_HOME/bin
 
-export CUDNN_Lib=/path/to/cudnn/lib
+# ========== CUDNN 路径（基于你的find命令结果）==========
+export CUDNN_Lib=/usr/lib/aarch64-linux-gnu
+
+
+
 
 # export TensorRT_Lib=${TENSORRT_LIB}
 # export TensorRT_Inc=${TENSORRT_INCLUDE}
@@ -46,7 +54,7 @@ export CUDNN_Lib=/path/to/cudnn/lib
 # Just used to distinguish the libspconv version, it doesn't affect the version of cuda used by your application
 # For CUDA-11.x:    SPCONV_CUDA_VERSION=11.4
 # For CUDA-12.x:    SPCONV_CUDA_VERSION=12.6
-export SPCONV_CUDA_VERSION=12.8
+export SPCONV_CUDA_VERSION=11.4
 
 # resnet50/resnet50int8/swint
 export DEBUG_MODEL=resnet50int8
