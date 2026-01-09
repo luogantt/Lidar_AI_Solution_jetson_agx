@@ -32,30 +32,6 @@ CUDA & TensorRT solution for [BEVFusion](https://arxiv.org/abs/2205.13542) infer
 - **Easy To Use**: Preparation, inference, evaluation all in one to reproduce torch Impl accuracy.
 - **PTQ**: Quantization solutions for [mmdet3d/spconv](https://github.com/mit-han-lab/bevfusion/tree/main/mmdet3d/ops/spconv), Easy to understand.
 
-## CUDA CenterPoint
-CUDA & TensorRT solution for [CenterPoint](https://arxiv.org/abs/2006.11275) inference, including:
-- **Preprocess**: Voxelization with CUDA kernel
-- **Encoder**: 3D backbone with NV spconv-scn and onnx export solution.
-- **Neck & Header**: RPN & CenterHead with TensorRT and onnx export solution.
-- **Postprocess**: Decode & NMS with CUDA kernel
-- **Easy To Use**: Preparation, inference, evaluation all in one to reproduce torch Impl accuracy.
-- **QAT**: Quantization solutions for [traveller59/spconv](https://github.com/traveller59/spconv), Easy to understand.
-
-## CUDA PointPillars
-CUDA & TensorRT solution for [pointpillars](https://arxiv.org/abs/1812.05784) inference, including:
-- **Preprocess**: Voxelization & Feature Extending with CUDA kernel
-- **Detector**: 2.5D backbone with TensorRT and onnx export solution.
-- **Postprocess**: Parse bounding box, class type and direction
-- **Easy To Use**: Preparation, inference, evaluation all in one to reproduce torch Impl accuracy.
-
-## CUDA-V2XFusion
-Training and inference solutions for V2XFusion.
-- **Easy To Use**: Provides easily reproducible solutions for training, quantization, and ONNX export.
-- **Quantification friendly**：PointPillars based backbone with pre-normalization which can reduce quantization error.
-- **Feature Fusion**: Camera & Lidar feature fuser and onnx export solution.
-- **PTQ**: Quantization solutions for V2XFusion, easy to understand.
-- **Sparsity**: 4:2 structural sparsity support. 
-- **Deepstream sample**: Sample inference using CUDA, TensorRT/Triton in NVIDIA DeepStream SDK 7.0.
 
 ## cuOSD(CUDA On-Screen Display Library)
 Draw all elements using a single CUDA kernel.
