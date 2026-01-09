@@ -1,3 +1,98 @@
+
+
+
+[我的项目链接](https://github.com/luogantt/Lidar_AI_Solution/tree/master/CUDA-BEVFusion)
+
+ 环境是 11.4 ，我是用sdkmanager 刷的系统，各种组件 都刷上了，而且只能通用 ubuntu 本机刷系统 ，虚拟机不行 ，在刷的过程中 需要频繁 连接 。
+```
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+```
+
+######   cmake 也要更改过 ，在头部加几行代码
+
+ [我的cmake](https://github.com/luogantt/Lidar_AI_Solution/blob/master/CUDA-BEVFusion/CMakeLists.txt)
+ 
+
+```
+
+# 强制 Protobuf 使用动态库（添加在文件最顶部）
+set(Protobuf_USE_STATIC_LIBS OFF)
+set(Protobuf_USE_SHARED_LIBS ON)
+
+# 显式指定 Protobuf 动态库路径（兜底）
+find_library(PROTOBUF_SHARED_LIB protobuf PATHS /usr/local/lib NO_DEFAULT_PATH)
+if(NOT PROTOBUF_SHARED_LIB)
+    message(FATAL_ERROR "Protobuf dynamic library not found!")
+endif()
+```
+ 
+<font color =darkred >还有一点要必须强调的是 Lidar_AI_Solution下面项目 编译的时候都依赖 /libraries/3DSparseConvolution/libspconv 下面的 动态库，比如我的 cuda=11.4 就需要 libspconv/lib/aarch64_cuda11.4/libspconv.so 这个动态库
+ <font color =darkblue >/libspconv.so 这个动态库不开源！
+  <font color =darkblue >/libspconv.so 这个动态库不开源！
+    <font color =darkblue >/libspconv.so 这个动态库不开源！
+      <font color =darkblue >重要事情说三遍！
+
+##### 第二个问题就是 protobuf 需要安装好 基本上就是 这个两个问题要特别注意
+
+###### 其他按照教程就可以了
+![在这里插入图片描述](https://i-blog.csdnimg.cn/direct/67bfd492fd054acfa09c45a3813e0e12.jpeg#pic_center)
+
+```
+=============================================
+==================BEVFusion===================
+[⏰ [NoSt] CopyLidar]: 	0.52656 ms
+[⏰ [NoSt] ImageNrom]: 	7.13533 ms
+[⏰ Lidar Backbone]: 	18.64733 ms
+[⏰ Camera Depth]: 	0.16378 ms
+[⏰ Camera Backbone]: 	13.59942 ms
+[⏰ Camera Bevpool]: 	2.53222 ms
+[⏰ VTransform]: 	2.66922 ms
+[⏰ Transfusion]: 	8.26883 ms
+[⏰ Head BoundingBox]: 	16.14006 ms
+Total: 62.021 ms
+=============================================
+Save to build/cuda-bevfusion.jpg
+[Warning]: If you got an inaccurate boundingbox result please turn on the layernormplugin plan. (main.cpp:207)
+
+```
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/direct/2be2136bf87e4c41a83a14ea1335ddaf.jpeg#pic_center)
+
+  
+  
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <h1 style="text-align: center">Lidar AI Solution</h1>
 This is a highly optimized solution for self-driving 3D-lidar repository.
 It does a great job of speeding up sparse convolution/CenterPoint/BEVFusion/OSD/Conversion.
