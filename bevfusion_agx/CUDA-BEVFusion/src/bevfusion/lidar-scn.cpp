@@ -24,6 +24,7 @@
 #include "lidar-scn.hpp"
 
 #include <spconv/engine.hpp>
+#include <cstdio>
 #include "lidar-scn-onnx-parser.hpp"
 
 namespace bevfusion {
@@ -32,6 +33,12 @@ namespace lidar {
 class SCNImplement : public SCN {
  public:
   bool init(const SCNParameter& param) {
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+    if (param.precision != Precision::Float16) {
+      std::fprintf(stderr, "The open sparse backend supports FP16 only; use precision=fp16.\n");
+      return false;
+    }
+#endif
     this->param_ = param;
     voxelization_ = create_voxelization(param_.voxelization);
     if (voxelization_ == nullptr) return false;

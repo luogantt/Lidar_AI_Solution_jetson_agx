@@ -20,61 +20,49 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# export CUDA_VISIBLE_DEVICES=2
+# Explicit environment settings take precedence over the platform defaults.
+bevfusion_host_arch=$(uname -m)
+export TensorRT_Lib=${TensorRT_Lib:-/usr/lib/${bevfusion_host_arch}-linux-gnu}
+export TensorRT_Inc=${TensorRT_Inc:-/usr/include/${bevfusion_host_arch}-linux-gnu}
+export TensorRT_Bin=${TensorRT_Bin:-/usr/src/tensorrt/bin}
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
+export CUDA_Lib=${CUDA_Lib:-${CUDA_HOME}/lib64}
+export CUDA_Inc=${CUDA_Inc:-${CUDA_HOME}/include}
+export CUDA_Bin=${CUDA_Bin:-${CUDA_HOME}/bin}
+export CUDNN_Lib=${CUDNN_Lib:-/usr/lib/${bevfusion_host_arch}-linux-gnu}
 
-# change the path to the directory you are currently using
-# ========== TensorRT 路径（基于你的find命令结果）==========
-export TensorRT_Lib=/usr/lib/aarch64-linux-gnu
-export TensorRT_Inc=/usr/include/aarch64-linux-gnu
-export TensorRT_Bin=/usr/src/tensorrt/bin # Jetson默认TensorRT工具（如trtexec）所在路径
-
-
-# ========== CUDA 路径（Jetson标准软链接路径）==========
-export CUDA_Lib=/usr/local/cuda/lib64
-export CUDA_Inc=/usr/local/cuda/include
-export CUDA_Bin=/usr/local/cuda/bin
-export CUDA_HOME=/usr/local/cuda
-
-# ========== CUDNN 路径（基于你的find命令结果）==========
-export CUDNN_Lib=/usr/lib/aarch64-linux-gnu
-
-
-
-
-# export TensorRT_Lib=${TENSORRT_LIB}
-# export TensorRT_Inc=${TENSORRT_INCLUDE}
-# export TensorRT_Bin=${TENSORRT_BIN}
-
-# export CUDA_Lib=${CUDA_LIB}
-# export CUDA_Inc=${CUDA_INCLUDE}
-# export CUDA_Bin=${CUDA_BIN}
-
-# export CUDNN_Lib=${CUDNN_LIB}
-
-# Just used to distinguish the libspconv version, it doesn't affect the version of cuda used by your application
-# For CUDA-11.x:    SPCONV_CUDA_VERSION=11.4
-# For CUDA-12.x:    SPCONV_CUDA_VERSION=12.6
-export SPCONV_CUDA_VERSION=11.4
-
-# resnet50/resnet50int8/swint
-export DEBUG_MODEL=resnet50int8
-
-# fp16/int8
-export DEBUG_PRECISION=int8
-export DEBUG_DATA=example-data
-export USE_Python=OFF
+# NVIDIA prebuilt library directory suffix; unused by the source-built open backend.
+export SPCONV_CUDA_VERSION=${SPCONV_CUDA_VERSION:-11.4}
+export BEVFUSION_SPARSE_BACKEND=${BEVFUSION_SPARSE_BACKEND:-nvidia}
+if [ "$BEVFUSION_SPARSE_BACKEND" = "open" ]; then
+    export DEBUG_MODEL=${DEBUG_MODEL:-resnet50}
+    export DEBUG_PRECISION=${DEBUG_PRECISION:-fp16}
+else
+    export DEBUG_MODEL=${DEBUG_MODEL:-resnet50int8}
+    export DEBUG_PRECISION=${DEBUG_PRECISION:-int8}
+fi
+export DEBUG_DATA=${DEBUG_DATA:-example-data}
+export USE_Python=${USE_Python:-OFF}
 
 # check the configuration path
 # clean the configuration status
 export ConfigurationStatus=Failed
+if [ "$BEVFUSION_SPARSE_BACKEND" != "nvidia" ] && [ "$BEVFUSION_SPARSE_BACKEND" != "open" ]; then
+    echo "BEVFUSION_SPARSE_BACKEND must be nvidia or open."
+    return 1
+fi
+if [ "$BEVFUSION_SPARSE_BACKEND" = "open" ] && [ "$DEBUG_PRECISION" != "fp16" ]; then
+    echo "The open sparse backend supports FP16 only. Set DEBUG_PRECISION=fp16."
+    return 1
+fi
 if [ ! -f "${TensorRT_Bin}/trtexec" ]; then
     echo "Can not find ${TensorRT_Bin}/trtexec, there may be a mistake in the directory you configured."
-    return
+    return 1
 fi
 
 if [ ! -f "${CUDA_Bin}/nvcc" ]; then
     echo "Can not find ${CUDA_Bin}/nvcc, there may be a mistake in the directory you configured."
-    return
+    return 1
 fi
 
 echo "=========================================================="
@@ -82,34 +70,40 @@ echo "||  MODEL: $DEBUG_MODEL"
 echo "||  PRECISION: $DEBUG_PRECISION"
 echo "||  DATA: $DEBUG_DATA"
 echo "||  USEPython: $USE_Python"
+echo "||  SPARSE BACKEND: $BEVFUSION_SPARSE_BACKEND"
 echo "||"
 echo "||  TensorRT: $TensorRT_Lib"
 echo "||  CUDA: $CUDA_HOME"
 echo "||  CUDNN: $CUDNN_Lib"
 echo "=========================================================="
 
-BuildDirectory=`pwd`/build
+BuildDirectory=${BuildDirectory:-$(pwd)/build}
 
 if [ "$USE_Python" == "ON" ]; then
-    export Python_Inc=`python3 -c "import sysconfig;print(sysconfig.get_path('include'))"`
-    export Python_Lib=`python3 -c "import sysconfig;print(sysconfig.get_config_var('LIBDIR'))"`
-    export Python_Soname=`python3 -c "import sysconfig;import re;print(re.sub('.a', '.so', sysconfig.get_config_var('LIBRARY')))"`
+    export Python_Inc=${Python_Inc:-$(python3 -c "import sysconfig;print(sysconfig.get_path('include'))")}
+    export Python_Lib=${Python_Lib:-$(python3 -c "import sysconfig;print(sysconfig.get_config_var('LIBDIR'))")}
+    export Python_Soname=${Python_Soname:-$(python3 -c "import sysconfig;print(sysconfig.get_config_var('LDLIBRARY'))")}
     echo Find Python_Inc: $Python_Inc
     echo Find Python_Lib: $Python_Lib
     echo Find Python_Soname: $Python_Soname
 fi
 
 export PATH=$TensorRT_Bin:$CUDA_Bin:$PATH
-export LD_LIBRARY_PATH=$TensorRT_Lib:$CUDA_Lib:$CUDNN_Lib:$BuildDirectory:$LD_LIBRARY_PATH
-export PYTHONPATH=$BuildDirectory:$PYTHONPATH
-export ConfigurationStatus=Success
+export LD_LIBRARY_PATH=$TensorRT_Lib:$CUDA_Lib:$CUDNN_Lib:$BuildDirectory:${LD_LIBRARY_PATH:-}
+export PYTHONPATH=$BuildDirectory:${PYTHONPATH:-}
 
-if [ -f "tool/cudasm.sh" ]; then
+if [ -z "${CUDASM:-}" ] && [ -f "tool/cudasm.sh" ]; then
     echo "Try to get the current device SM"
     . "tool/cudasm.sh"
     echo "Current CUDA SM: $cudasm"
+    export CUDASM=$cudasm
 fi
 
-export CUDASM=$cudasm
+if [[ ! ${CUDASM:-} =~ ^[0-9]+$ ]]; then
+    echo "Unable to detect CUDA SM. Set CUDASM explicitly, for example CUDASM=86."
+    return 1
+fi
+export CUDASM
+export ConfigurationStatus=Success
 
 echo Configuration done!

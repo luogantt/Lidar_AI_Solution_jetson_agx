@@ -29,6 +29,8 @@
 namespace spconv{
 
 // Create an engine and load the weights from onnx file
+// The open backend accepts Float16 only. The NVIDIA-specific options must remain false;
+// fixed_launch_points is ignored because the open backend does not use CUDA graph padding.
 std::shared_ptr<Engine> load_engine_from_onnx(
     const std::string& onnx_file,                         // the path to the onnx file that is exported by the specific script compatible with spconv, such as tools/deploy/export-scn.py.
     Precision inference_precision = Precision::Float16,   // the precision to use for model inference. It has high priority than the precision of each layer.

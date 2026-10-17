@@ -1,6 +1,12 @@
 # CUDA-BEVFusion
 
 This repository contains sources and model for [BEVFusion](https://github.com/mit-han-lab/bevfusion) inference using CUDA & TensorRT.
+
+An optional FP16 sparse backend can be built from New3DSparseConvolution and
+traveller59/spconv sources with `BEVFUSION_SPARSE_BACKEND=open`. See the
+[build and numerical validation guide](../libraries/New3DSparseConvolution/README.md).
+The NVIDIA backend remains the default; the performance table below describes
+the original NVIDIA implementation.
 ![title](/assets/bevfusion.png)
 
 

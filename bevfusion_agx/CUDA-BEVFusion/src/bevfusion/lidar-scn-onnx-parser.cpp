@@ -22,8 +22,9 @@
  */
 
 #include "lidar-scn-onnx-parser.hpp"
-#include "onnx/onnx-ml.pb.h"
-#include "onnx/onnx-operators-ml.pb.h"
+#include "onnx-ml.pb.h"
+#include "onnx-operators-ml.pb.h"
+#include <cstdio>
 #include <fstream>
 #include <numeric>
 #include <unordered_map>
@@ -31,8 +32,13 @@
 
 namespace spconv{
 
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+#define LOGV(...) do { if (spconv::get_verbose()) { std::fprintf(stderr, __VA_ARGS__); std::fprintf(stderr, "\n"); } } while (0)
+#define LOGERR(...) do { std::fprintf(stderr, __VA_ARGS__); std::fprintf(stderr, "\n"); } while (0)
+#else
 #define LOGV(...)   spconv::logger_output(__FILE__, __LINE__, spconv::LoggerLevel::Verb, __VA_ARGS__)
 #define LOGERR(...) spconv::logger_output(__FILE__, __LINE__, spconv::LoggerLevel::Error, __VA_ARGS__)
+#endif
 
 struct ParameterFP16Data{
     std::vector<unsigned short> data;
@@ -100,6 +106,17 @@ static std::vector<int> get_attribute_as_intarray(const onnx::NodeProto& node, c
 
 std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Precision precision, bool sortmask, bool enable_blackwell, bool with_auxiliary_stream, unsigned int fixed_launch_points, void* stream){
 
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+    if (precision != Precision::Float16) {
+        LOGERR("The open sparse backend supports FP16 only; INT8 inference is not enabled.");
+        return nullptr;
+    }
+    if (sortmask || enable_blackwell || with_auxiliary_stream) {
+        LOGERR("The open sparse backend does not implement NVIDIA sortmask, Blackwell or auxiliary-stream options.");
+        return nullptr;
+    }
+    (void)fixed_launch_points;  // The open engine uses dynamic point counts, without CUDA graph padding.
+#endif
     LOGV("Load onnx from: %s", onnx_file.c_str());
     bool mark_all_output = false;
     onnx::ModelProto model;
@@ -121,13 +138,21 @@ std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Prec
     std::vector<spconv::ITensor*> collect_outputs;
     for (int i = 0; i < model.graph().node_size(); ++i) {
         auto& node = model.graph().node(i);
+#ifndef BEVFUSION_SPARSE_BACKEND_OPEN
         unsigned int local_fixed_launch_points = fixed_launch_points;
         if(has_attribute(node, "fixed_launch_points")){
             local_fixed_launch_points = get_attribute(node, "fixed_launch_points").i();
             LOGV("using fixed_launch_points from attribute: %d for node: %s", local_fixed_launch_points, node.name().c_str());
         }
+#endif
         
         if (node.op_type() == "SparseConvolution") {
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+            if (get_attribute(node, "inverse").i()) {
+                LOGERR("The open sparse backend does not support inverse convolution: %s", node.name().c_str());
+                return nullptr;
+            }
+#endif
             auto x = tensor_map_by_name[node.input(0)];
             auto weight = get_initializer_data(graph, node.input(1));
             auto bias   = get_initializer_data(graph, node.input(2));
@@ -160,7 +185,9 @@ std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Prec
                 get_attribute(node, "input_dynamic_range").f(),
                 get_attribute(node, "subm").i(),
                 output_bound,
+#ifndef BEVFUSION_SPARSE_BACKEND_OPEN
                 local_fixed_launch_points,
+#endif
                 rulebook.c_str(),
                 get_attribute(node, "precision").s() == "int8" ? Precision::Int8 : Precision::Float16,
                 get_attribute(node, "output_precision").s() == "int8" ? Precision::Int8 : Precision::Float16,
@@ -183,8 +210,10 @@ std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Prec
                 get_attribute(node, "input1_dynamic_range").f(),
                 node.output(0).c_str(), 
                 get_attribute(node, "precision").s() == "int8" ? Precision::Int8 : Precision::Float16,
-                get_attribute(node, "output_precision").s() == "int8" ? Precision::Int8 : Precision::Float16,
-                fixed_launch_points
+                get_attribute(node, "output_precision").s() == "int8" ? Precision::Int8 : Precision::Float16
+#ifndef BEVFUSION_SPARSE_BACKEND_OPEN
+                , fixed_launch_points
+#endif
             );
             tensor_map_by_name[node.output(0)] = n->output(0);
         } else if (node.op_type() == "Relu") {
@@ -198,8 +227,18 @@ std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Prec
             auto format = get_attribute(node, "format").s();
             auto input_dynamic_range = get_attribute(node, "input_dynamic_range").f();
             auto output_layout_string = get_attribute(node, "output_layout").s();
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+            if (!output_layout_string.empty() && output_layout_string != "NCHW") {
+                LOGERR("The open sparse backend requires NCHW output; got %s for node %s.",
+                       output_layout_string.c_str(), node.name().c_str());
+                return nullptr;
+            }
+            auto layout = spconv::TensorLayout::NCHW;
+            auto n = builder->push_dense(node.name().c_str(), x, format.c_str(), node.output(0).c_str(), input_spatial_shape, output_shape, layout, input_dynamic_range);
+#else
             auto layout = output_layout_string == "NCHW32" ? spconv::TensorLayout::NCHW32 : (output_layout_string == "NHWzC" ? spconv::TensorLayout::NHWzC : spconv::TensorLayout::NCHW);
             auto n = builder->push_dense(node.name().c_str(), x, format.c_str(), node.output(0).c_str(), input_spatial_shape, output_shape, layout, input_dynamic_range, fixed_launch_points);
+#endif
             tensor_map_by_name[node.output(0)] = n->output(0);
         } else if (node.op_type() == "Reshape") {
             auto x = tensor_map_by_name[node.input(0)];
@@ -227,6 +266,10 @@ std::shared_ptr<Engine> load_engine_from_onnx(const std::string& onnx_file, Prec
     for (int i = 0; i < collect_outputs.size(); ++i) {
         builder->push_output(collect_outputs[i]);
     }
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+    return builder->build(precision, stream);
+#else
     return builder->build(precision, sortmask, enable_blackwell, with_auxiliary_stream, stream);
+#endif
 }
 };

@@ -49,15 +49,12 @@ static class Logger : public nvinfer1::ILogger {
 } gLogger_;
 
 static std::string format_shape(const nvinfer1::Dims &shape) {
-  char buf[200] = {0};
-  char *p = buf;
+  std::string result;
   for (int i = 0; i < shape.nbDims; ++i) {
-    if (i + 1 < shape.nbDims)
-      p += sprintf(p, "%d x ", (int)shape.d[i]);
-    else
-      p += sprintf(p, "%d", (int)shape.d[i]);
+    if (i != 0) result += " x ";
+    result += std::to_string(shape.d[i]);
   }
-  return buf;
+  return result;
 }
 
 static std::vector<uint8_t> load_file(const std::string &file) {
@@ -259,9 +256,14 @@ class EngineImplement : public Engine {
   }
 
   virtual bool set_run_dims(int ibinding, const std::vector<int> &dims) override {
-    nvinfer1::Dims d;
-    memcpy(d.d, dims.data(), sizeof(int) * dims.size());
-    d.nbDims = dims.size();
+    if (dims.size() > static_cast<size_t>(nvinfer1::Dims::MAX_DIMS)) {
+      printf("Too many TensorRT dimensions: %zu (maximum %d).\n", dims.size(), nvinfer1::Dims::MAX_DIMS);
+      return false;
+    }
+    nvinfer1::Dims d{};
+    d.nbDims = static_cast<int32_t>(dims.size());
+    // TensorRT 8 stores int32 dimensions; TensorRT 10 stores int64 dimensions.
+    std::copy(dims.begin(), dims.end(), d.d);
     auto engine = this->context_->engine_;
     auto context = this->context_->context_;
     return context->setInputShape(engine->getIOTensorName(ibinding), d);
