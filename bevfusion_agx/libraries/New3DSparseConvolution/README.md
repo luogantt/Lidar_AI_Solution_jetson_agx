@@ -1,202 +1,323 @@
-# BEVFusion 的源码稀疏卷积后端
+# 从内置源码构建稀疏卷积与完整 BEVFusion
 
-本目录把 `riteshkhrn/New3DSparseConvolution` 接入现有 BEVFusion SCN 接口。
-点云体素化、相机分支和 TensorRT 融合网络保留原流程：
+本指南对应 `lg/open-spconv-3070` 分支。默认后端为 `open`，支持 FP16；INT8 会被明确拒绝。底层 spconv、cumm 源码已纳入本项目，构建不下载它们的 GitHub 源码，也不使用 NVIDIA 预编译的稀疏卷积库。CUDA、cuBLAS 和完整 BEVFusion 所需的 TensorRT 仍是 NVIDIA 软件；Python 代码生成依赖仍通过 pip 安装，因此这不是全离线构建。
 
-```text
-points → CUDA voxelization → New3DSparseConvolution/libscn.so
-                                ↓
-                       traveller59/spconv（源码生成的 libspconv.so）
-                                ↓
-                       FP16 LiDAR BEV → 原 TensorRT fuser/head
-```
+生成的底层库也叫 `libspconv.so`，但它与旧 NVIDIA 同名库的 API/ABI **不兼容**。请搭配本分支的 `libscn.so`、解析器和 BEVFusion 程序使用，不能把它直接复制覆盖旧程序的 NVIDIA 库。
 
-`BEVFUSION_SPARSE_BACKEND=open` 是默认值；`nvidia` 可显式选择原有后端。
-两个 `libspconv.so` 名字相同，API 不同。请使用独立构建目录，并检查 `ldd`
-实际解析的路径。不要把 NVIDIA 的库目录放入 open 后端的 `LD_LIBRARY_PATH`。
+当前范围为 Linux、CUDA、FP16、batch=1、XYZ/ZYX 坐标，以及 BEVFusion 使用的 SparseConvolution/SubMConv、Add、ReLU 和融合 ScatterDense 尾部。INT8、inverse convolution、NCHW32/NHWzC 和 NVIDIA CUDA Graph/辅助流选项未启用，构建器会拒绝不支持的配置。各层 `output_bound` 还承担输入容量上限，修改模型时必须同时覆盖实际输入和输出活跃点数。
 
-兼容图引擎在 `libspconv/`，计算内核和代码生成器的完整源码已纳入
-`third_party/spconv/`、`third_party/cumm/`，可以直接修改、审查和随项目提交。
-open 后端从这些文件生成并编译 `libspconv.so`，构建脚本不从 GitHub 下载
-spconv/cumm，也不使用 NVIDIA 预编译稀疏卷积库。
+## 本轮源码重建实测
 
-当前接入范围为 Linux、CUDA、FP16、batch=1、XYZ/ZYX 坐标，以及原有
-BEVFusion 的 SparseConvolution/SubMConv、Add、ReLU 和融合 ScatterDense 尾部。
-INT8、inverse convolution、NCHW32/NHWzC、NVIDIA CUDA Graph/辅助流选项未启用。
-构建器会拒绝不支持的配置。各层 `output_bound` 也用作本层输入容量，因此应
-覆盖实际输入和输出活跃点数；上游 BEVFusion fixture 使用统一上限。
+2026-10-17 使用 `f3c9793` 内置源码加当前 `build_deps.sh` 的部分 venv 恢复修复，在 `/root/bevfusion-vendored-rebuild-20261017` 的全新依赖/构建目录完成重建。实际环境为 RTX 3090、CUDA 12.8.93、GCC 11.4、CMake 3.22.1；代码生成使用系统 Python 3.10.12，引擎构建使用 Python 3.11.15、TensorRT 10.13.3.9、ONNX 1.23.0。
 
-## 1. 构建计算内核
+底层 `libspconv.so`、兼容层和完整程序均重新编译，动态链接路径核对通过；四个 TensorRT 引擎的首次构建记录均为 `reused: false`。XYZ/ZYX 参考数值检查、8/8 非方形回归，以及官方样例和 mini_val 81/81 帧完整推理均通过运行检查。
 
-需要 Linux、CMake >= 3.20、GCC、CUDA Toolkit、Python >= 3.10 和
-Protobuf 开发包。Ubuntu 可安装：
+| 完整 ResNet50 FP16 推理 | 平均延迟 | P95 | 单帧串行 FPS |
+| --- | ---: | ---: | ---: |
+| 官方样例，预热 10 次、测量 100 次 | 19.226500 ms | 19.548640 ms | 52.011548 |
+| mini_val，首帧预热 10 次、每帧测量一次 | 22.242601 ms | 23.898073 ms | 44.958771 |
+
+每帧测量前会执行不计时的 raw-head 预检，文件读取、标定、预热和可视化均不计入上述耗时；mini 不是新帧首次执行的冷路径。结果仅代表 RTX 3090，不推断 3070 Ti 性能，也不构成 mAP/NDS 或性能提升结论。源码来源、误差、显存和原始记录位置见 [分批验证记录](VALIDATION.md#本轮从内置源码全新重建)。
+
+## 1. 获取项目并固定工作目录
+
+以下命令在 Linux Bash 下执行。除显式括号中的子 shell 外，始终停留在项目根目录 `bevfusion_agx`，并在同一 shell 中依次执行。不要使用旧 NVIDIA 仓库的 clone 命令替代这里的地址。
 
 ```bash
-sudo apt-get install build-essential cmake python3-dev python3-venv libprotobuf-dev protobuf-compiler
+git clone --branch lg/open-spconv-3070 --single-branch \
+  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
+cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
+export PROJECT_ROOT="$PWD"
+export SCN_ROOT="$PROJECT_ROOT/libraries/New3DSparseConvolution"
+export BEV_ROOT="$PROJECT_ROOT/CUDA-BEVFusion"
+export NEWSCN_DEPS_ROOT="$SCN_ROOT/_deps-sm86"
+export SCN_BUILD="$SCN_ROOT/build-sm86"
+export BEV_BUILD="$BEV_ROOT/build/open"
+export RESULT_ROOT="$PROJECT_ROOT/artifacts/results"
+mkdir -p "$RESULT_ROOT"
+git rev-parse HEAD
 ```
 
-若通过 `PYTHON` 选择自定义 Python，需要安装该版本的开发头文件（`Python.h`）。
+`third_party/spconv` 与 `third_party/cumm` 是完整的固定版本源码快照，无需初始化它们的 Git 子模块。版本、归档校验和及许可证位置记录在 [source-manifest.json](third_party/source-manifest.json)；兼容层来源和修改说明见 [UPSTREAM.md](UPSTREAM.md)。
 
-从 `bevfusion_agx` 目录执行：
+## 2. 系统依赖与 CUDA 架构
+
+下面以 Ubuntu 22.04、CUDA 12.8、GCC 11、SM 86 为例。RTX 3070 Ti 和 RTX 3090 的计算能力均为 8.6，见 [NVIDIA GPU 架构表](https://developer.nvidia.com/cuda/gpus)；其他 GPU 必须设置对应架构，并检查该 CUDA Toolkit 的支持范围。此流程要求 NVIDIA CUDA GPU，不能直接用于瑞芯微 NPU 或华为昇腾。
 
 ```bash
-export CUDA_HOME=/usr/local/cuda-12.8
+sudo apt-get update
+sudo apt-get install -y build-essential gcc-11 g++-11 git cmake \
+  python3 python3-venv python3-dev protobuf-compiler libprotobuf-dev unzip
+
+export PYTHON=python3
+export CC=gcc-11
+export CXX=g++-11
+export CUDA_HOME=/usr/local/cuda
+export CUDA_Lib="$CUDA_HOME/lib64"
 export PATH="$CUDA_HOME/bin:$PATH"
-export CUMM_CUDA_ARCH_LIST=8.6  # RTX 3070/3070 Ti/3090
-export BUILD_JOBS=2           # 按主机 CPU/RAM 调整，首次编译需要时间
-bash libraries/New3DSparseConvolution/build_deps.sh
+export CUDACXX="$CUDA_HOME/bin/nvcc"
+export CUMM_CUDA_ARCH_LIST=8.6
+export CMAKE_CUDA_ARCHITECTURES=86
+export CUDASM=86
+export BUILD_JOBS=2
+
+"$PYTHON" --version
+cmake --version
+"$CUDACXX" --version
+nvidia-smi
 ```
 
-脚本先核对 `third_party/source-manifest.json` 中固定的 spconv 2.3.8/cumm
-0.7.11 commit 和许可文件，再把当前源码复制到可写的 `_deps`。生成文件、
-独立 Python 环境和编译结果都留在 `_deps`，不会写回 `third_party`。
-`_deps/source-state.json` 记录实际源码树 SHA-256、commit 和许可哈希；
-`_deps/build-manifest.txt` 记录 CUDA、架构、构建脚本哈希及 Python 依赖版本。
+CUDA Toolkit 和驱动需另行安装；`nvidia-smi` 显示的是驱动支持的 CUDA 上限，实际编译版本以 `nvcc --version` 为准。建议 Python 3.10–3.12、CMake 3.20–3.x：固定的 NumPy 1.26.4 不支持 Python 3.13，主项目仍使用旧 `FindCUDA`，不要直接使用 CMake 4。Ubuntu 22.04 自带 Python 3.10 和 CMake 3.22 满足此流程。
 
-源码修改后需要新构建目录。脚本会拒绝没有 `source-state.json` 的旧 `_deps`、
-与当前 vendored 源码指纹不符的目录，以及被直接修改过的已复制源码，避免
-悄悄沿用旧代码。请在 `third_party` 中改源码，用新目录重新生成，然后让
-BEVFusion CMake 使用同一路径，例如：
+cumm 的 Linux 构建内部还会引用 `/usr/local/cuda`。请确认该路径与 `CUDA_HOME` 指向同一套 Toolkit，不要混用多个 CUDA 版本。`BUILD_JOBS` 控制最终 CMake 编译并行度；代码生成中的 Python 原生扩展构建可能另有并行开销。
+
+## 3. 从内置源码生成底层 libspconv.so
 
 ```bash
-export NEWSCN_DEPS_ROOT="$PWD/libraries/New3DSparseConvolution/_deps-patch1"
-bash libraries/New3DSparseConvolution/build_deps.sh
-# 在 CUDA-BEVFusion 目录执行 tool/run.sh 时会传递此环境变量。
-# 直接调用 CMake 则加 -DNEWSCN_DEPS_ROOT="$NEWSCN_DEPS_ROOT"。
+bash "$SCN_ROOT/build_deps.sh"
+export SPCONV_LIB_DIR="$NEWSCN_DEPS_ROOT/spconv/example/libspconv/build/spconv/src"
+test -f "$SPCONV_LIB_DIR/libspconv.so"
+cat "$NEWSCN_DEPS_ROOT/build-manifest.txt"
 ```
 
-原始归档哈希用于记录来源，不会阻止本地源码补丁；当前源码内容另行计算指纹。
-Python 的 `__pycache__`/`.pyc`/`.pyo` 不参与指纹，其余已复制源码会逐文件核对。
-请勿把编译输出放进 `third_party`。CMake 配置时也通过 `--check-only` 只读核对
-源码及依赖目录来源，未准备、旧版本或不匹配的依赖会被拒绝。
-如果只想检查本地来源和复制行为，不编译 CUDA：
+脚本将项目内源码复制到可写的 `NEWSCN_DEPS_ROOT`，建立独立 Python venv，安装固定代码生成依赖，生成 SM 86 的推理内核，再编译动态库。上游源码版本为 spconv 2.3.8 / `263d6b47425ef843c82f997b12d8b714013d216c` 和 cumm 0.7.11 / `b8d83b6511b70746d04485d0d2ec00896b735430`。
+
+`$NEWSCN_DEPS_ROOT/source-state.json` 记录当前源码树 SHA-256、commit 和许可哈希，`build-manifest.txt` 记录 CUDA、架构、构建脚本哈希及 Python 依赖版本。生成文件和编译结果不写回 `third_party`；Python 字节码缓存不计入源码指纹。使用自定义 Python 时，需同时安装该版本的 venv 和开发头文件包。
+
+可以直接审查、修改 `third_party` 中的源码。脚本会记录源码内容校验和；已有目录缺少来源状态、项目内源码发生变化、或已复制的上游文件被修改时会拒绝继续，防止沿用旧构建而忽略补丁。修改源码、CUDA 或架构后，请显式选择新的依赖和构建目录，例如：
 
 ```bash
-python3 libraries/New3DSparseConvolution/prepare_sources.py \
-  --deps-root /tmp/bevfusion-source-check
+# 需要重新构建时才执行本段；后续所有命令沿用这些新目录。
+export NEWSCN_DEPS_ROOT="$SCN_ROOT/_deps-sm86-patch1"
+export SCN_BUILD="$SCN_ROOT/build-sm86-patch1"
+export BEV_BUILD="$BEV_ROOT/build/open-patch1"
+bash "$SCN_ROOT/build_deps.sh"
+export SPCONV_LIB_DIR="$NEWSCN_DEPS_ROOT/spconv/example/libspconv/build/spconv/src"
 ```
 
-这不等于完全离线构建：脚本仍通过 pip 安装 NumPy、pccm、ccimport 等通用
-生成/打包依赖；无网络环境需事先准备相应 Python 包。CUDA Toolkit/驱动和
-完整推理使用的 TensorRT 仍依赖 NVIDIA 软件。代码生成和构建不需要 PyTorch。
+CMake 配置时也会以只读的 `prepare_sources.py --check-only` 核对来源状态和源码内容；不会隐式创建副本。构建生成的附加文件允许保留，不会被当成上游源码。
 
-## 2. 独立数值验证（不需要 TensorRT）
+## 4. 编译 libscn.so 和独立稀疏卷积检查程序
+
+这一阶段不需要 TensorRT 或相机模型。
 
 ```bash
-cmake -S libraries/New3DSparseConvolution \
-  -B libraries/New3DSparseConvolution/build \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86
-cmake --build libraries/New3DSparseConvolution/build --parallel 2
-python3 libraries/New3DSparseConvolution/fetch_fixtures.py
-python3 -m pip install numpy
-bash libraries/New3DSparseConvolution/validate.sh
+cmake -S "$SCN_ROOT" -B "$SCN_BUILD" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_COMPILER="$CUDACXX" \
+  -DCMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" \
+  -DNEWSCN_DEPS_ROOT="$NEWSCN_DEPS_ROOT" \
+  -DPython3_EXECUTABLE="$(command -v "$PYTHON")"
+cmake --build "$SCN_BUILD" --parallel "$BUILD_JOBS"
+test -f "$SCN_BUILD/libscn.so"
+test -x "$SCN_BUILD/sparse_backend_check"
 ```
 
-也可以让 `PYTHON` 指向 `_deps/venv/bin/python`，复用已经安装的 NumPy。
-fixture 下载脚本使用固定上游 commit 和 SHA-256 校验。验证器使用非默认、
-非阻塞 CUDA stream，每种坐标顺序预热 2 次、运行 10 次，保存首轮与末轮结果。
-Python 比较器检查完整 shape、有限值、max abs、MAE、RMSE、relative L2、cosine，
-并默认要求首末输出逐元素一致。失败返回非零状态；结果写到 `build/validation`。
+`libscn.so` 是本项目的图执行兼容层，链接上一节生成的底层内核库。Protobuf 源码由 CMake 自动生成，无需执行旧 `make_pb.sh`。
 
-单个模型可以直接运行 `build/sparse_backend_check --help`，数值阈值可通过
-`CUDA-BEVFusion/tool/compare_sparse_output.py --help` 调整。
-数值验证通过仅证明所测稀疏主干样本，不能替代全量 nuScenes 精度评估。
-
-非方形小模型回归使用独立 NumPy 卷积参考，检查 8 种 XYZ/ZYX 和
-Scatter/Transpose/Reshape 组合：
+下载固定校验和的公开测试数据并执行独立对照：
 
 ```bash
-python3 -m pip install numpy onnx
-python3 CUDA-BEVFusion/tool/generate_sparse_fixture.py \
-  --output libraries/New3DSparseConvolution/fixtures/non_square
-python3 CUDA-BEVFusion/tool/run_sparse_regression.py \
-  --checker libraries/New3DSparseConvolution/build/sparse_backend_check \
-  --fixtures libraries/New3DSparseConvolution/fixtures/non_square \
-  --output libraries/New3DSparseConvolution/build/regression
+"$PYTHON" "$SCN_ROOT/fetch_fixtures.py" --output "$SCN_ROOT/fixtures/bevfusion"
+PYTHON="$NEWSCN_DEPS_ROOT/venv/bin/python" \
+  bash "$SCN_ROOT/validate.sh" "$SCN_BUILD" \
+  "$SCN_ROOT/fixtures/bevfusion" "$SCN_BUILD/validation"
 ```
 
-## 3. 编译现有 BEVFusion 主程序
+该检查同时运行 XYZ 与 ZYX 布局，比较参考输出、有限值和重复执行一致性。它验证稀疏分支，不代替下文的整套 BEVFusion 推理或检测精度评测。
 
-安装与运行环境相匹配的 TensorRT 开发头文件及库，准备原项目
-`model/resnet50` 和 `example-data`。TensorRT engine 必须为目标 GPU/版本重新构建。
+## 5. 安装 TensorRT 10 的构建与 Python 环境
+
+完整推理需要 **C++ 头文件、动态库和匹配版本的 Python API**。以下固定 TensorRT 10.13.3.9 / CUDA 12，Python 包为 NVIDIA 发布的 [tensorrt-cu12 10.13.3.9](https://pypi.org/project/tensorrt-cu12/10.13.3.9/)。先从 [NVIDIA TensorRT 下载页](https://developer.nvidia.com/tensorrt/download) 获取对应 Linux SDK，解压到实际路径，并设置：
 
 ```bash
-cd CUDA-BEVFusion
-export BEVFUSION_SPARSE_BACKEND=open
-export DEBUG_MODEL=resnet50 DEBUG_PRECISION=fp16 CUDASM=86
-export TensorRT_Inc=/path/to/TensorRT/include
-export TensorRT_Lib=/path/to/TensorRT/lib
-export TensorRT_Bin=/path/to/TensorRT/bin
-# 根据原项目说明先构建相机、fuser 和 head 的 TensorRT engines。
-bash tool/run.sh
+# 将此路径改为实际解压目录。
+export TENSORRT_ROOT=/opt/TensorRT-10.13.3.9
+export TensorRT_Inc="$TENSORRT_ROOT/include"
+export TensorRT_Lib="$TENSORRT_ROOT/lib"
+test -f "$TensorRT_Inc/NvInfer.h"
+test -f "$TensorRT_Lib/libnvinfer.so.10"
+test -f "$TensorRT_Lib/libnvinfer_plugin.so.10"
+
+"$PYTHON" -m venv "$PROJECT_ROOT/artifacts/infer-venv"
+export INFER_PYTHON="$PROJECT_ROOT/artifacts/infer-venv/bin/python"
+"$INFER_PYTHON" -m pip install --upgrade pip
+"$INFER_PYTHON" -m pip install \
+  'numpy==1.26.4' 'onnx==1.17.0' 'tensorrt-cu12==10.13.3.9'
+"$INFER_PYTHON" -c 'import tensorrt as trt; print(trt.__version__)'
 ```
 
-`run.sh` 将默认 open 后端放在 `build/open`；显式选择的 NVIDIA 后端使用 `build`。
-如果自定义了依赖位置，可直接配置：
+### 只有 Python wheel、没有完整 SDK 时
+
+上面的 NVIDIA Python 包提供运行库，但不提供 C++ 头文件，也不能假定带有 `trtexec`。先完成 Python 环境安装，再用以下命令替代 SDK 的两个路径设置。头文件来自官方 [v10.13.3 标签](https://github.com/NVIDIA/TensorRT/releases/tag/v10.13.3)，校验到 commit `94e2b9ef6d2cce74c76cdad499cca36cc4949197`，版本宏为 10.13.3.9。
 
 ```bash
-cmake -S . -B build/open -DBEVFUSION_SPARSE_BACKEND=open \
-  -DBEVFUSION_CUDA_ARCH=86 -DNEWSCN_DEPS_ROOT=/absolute/path/to/deps
-cmake --build build/open --parallel 2
+git clone --depth 1 --branch v10.13.3 --filter=blob:none --sparse \
+  https://github.com/NVIDIA/TensorRT.git "$PROJECT_ROOT/artifacts/tensorrt-headers"
+git -C "$PROJECT_ROOT/artifacts/tensorrt-headers" sparse-checkout set include
+test "$(git -C "$PROJECT_ROOT/artifacts/tensorrt-headers" rev-parse HEAD)" = \
+  94e2b9ef6d2cce74c76cdad499cca36cc4949197
+export TensorRT_Inc="$PROJECT_ROOT/artifacts/tensorrt-headers/include"
+export TensorRT_Lib="$("$INFER_PYTHON" - <<'PY'
+from importlib.metadata import distribution
+from pathlib import Path
+dist = distribution('tensorrt-cu12-libs')
+paths = {dist.locate_file(item).resolve().parent for item in dist.files
+         if Path(str(item)).name == 'libnvinfer.so.10'}
+assert len(paths) == 1, paths
+print(paths.pop())
+PY
+)"
+test -f "$TensorRT_Inc/NvInfer.h"
+test -f "$TensorRT_Lib/libnvinfer.so.10"
+test -f "$TensorRT_Lib/libnvinfer_plugin.so.10"
 ```
 
-## 4. 完整 FP16 推理测速
+下面的 CMake 命令显式传递 `.so.10`，因此不依赖 SDK 才可能提供的无版本 `.so` 链接。不要将一个 TensorRT 版本的头文件与另一个版本的库混用。
 
-TensorRT 10.x 可通过 Python API 构建四个 dense engine，无需 `trtexec`。
-在 `CUDA-BEVFusion` 目录执行，选用已安装 `tensorrt`、`onnx` 的 Python：
+## 6. 编译完整 BEVFusion 程序
 
 ```bash
-python3 tool/build_fp16_engines.py --model-dir model/resnet50
-./build/open/bevfusion example-data resnet50 fp16 \
-  --warmup 10 --runs 100 --profile-runs 3 \
-  --benchmark-json build/open/benchmark.json \
-  --visualization build/open/benchmark.jpg
+cmake -S "$BEV_ROOT" -B "$BEV_BUILD" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBEVFUSION_SPARSE_BACKEND=open \
+  -DNEWSCN_DEPS_ROOT="$NEWSCN_DEPS_ROOT" \
+  -DBEVFUSION_CUDA_ARCH="$CUDASM" \
+  -DCMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" \
+  -DCMAKE_CUDA_COMPILER="$CUDACXX" \
+  -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_HOME" \
+  -DCMAKE_BUILD_PYTHON=OFF \
+  -DPython3_EXECUTABLE="$(command -v "$PYTHON")" \
+  -DTENSORRT_INCLUDE_DIR="$TensorRT_Inc" \
+  -DTENSORRT_LIBRARY="$TensorRT_Lib/libnvinfer.so.10" \
+  -DTENSORRT_PLUGIN_LIBRARY="$TensorRT_Lib/libnvinfer_plugin.so.10"
+cmake --build "$BEV_BUILD" --parallel "$BUILD_JOBS"
+
+export LD_LIBRARY_PATH="$TensorRT_Lib:$CUDA_Lib:$BEV_BUILD:$BEV_BUILD/open-sparse:$SPCONV_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+test -x "$BEV_BUILD/bevfusion"
+ldd "$BEV_BUILD/libbevfusion_core.so"
 ```
 
-构建脚本默认重建。`--reuse` 仅复用模型/外部权重、GPU、TensorRT、配置和
-引擎哈希均匹配且反序列化检查通过的缓存。FP16 允许内部混合精度 tactic；
-各 engine 的边界 I/O 固定为 FP16、LINEAR。
+确认 `ldd` 中没有 `not found`，且 `libspconv.so` 来自所选 `NEWSCN_DEPS_ROOT`。不要在 `LD_LIBRARY_PATH` 前面放旧 NVIDIA 稀疏卷积库。
 
-测速使用正常 `Core::forward` 的同步 CPU 墙钟时间，包含 host 输入拷贝、
-预处理、相机和 LiDAR、融合、检测框解码及结果回传；不包含文件读取、
-引擎加载、标定更新、预热、数值检查和图片保存。单帧 FPS 为平均延迟的倒数，
-没有跨帧并行。阶段 profile 独立执行，其原有 `Total` 不含输入拷贝和图像
-归一化，不能代替端到端延迟。
+| 文件 | 实际输出路径 |
+| --- | --- |
+| 底层稀疏 CUDA 内核 | `$SPCONV_LIB_DIR/libspconv.so` |
+| 独立兼容层 | `$SCN_BUILD/libscn.so` |
+| 独立检查程序 | `$SCN_BUILD/sparse_backend_check` |
+| 完整程序使用的兼容层 | `$BEV_BUILD/open-sparse/libscn.so` |
+| BEVFusion 主库 | `$BEV_BUILD/libbevfusion_core.so` |
+| LayerNorm 插件 | `$BEV_BUILD/libcustom_layernorm.so` |
+| 推理程序 | `$BEV_BUILD/bevfusion` |
 
-正式测速前独立检查全部原始检测头输出的 NaN/Inf；执行失败立即退出。
-这项检查和输出图片用于发现运行异常，不等于 nuScenes mAP/NDS 精度评估。
-显存记录是 `cudaMemGetInfo` 的整卡快照，不是进程峰值。
+## 7. 获取模型与样例，构建四个 TensorRT 引擎
 
-### nuScenes mini 多帧输入
-
-使用原始 `v1.0-mini` JSON、六路相机和 LiDAR 文件，纯 NumPy 转换即可：
+模型和样例不包含在 Git 仓库。使用 [原官方 CUDA-BEVFusion README 的 Model and Data](../../CUDA-BEVFusion/README.md#model-and-data) 中提供的 NVIDIA Box 或百度网盘入口，获取 `model.zip` 与 `nuScenes-example-data.zip`。若原下载入口失效，需要取得相同的官方模型资源；此文档不把其他来源的模型当作等价替代。
 
 ```bash
-python3 tool/prepare_nuscenes_mini.py --data-root /data/nuscenes \
-  --output-dir /data/bevfusion-mini-val --split mini_val --copy-images
-./build/open/bevfusion resnet50 fp16 \
-  --data-list /data/bevfusion-mini-val/data-list.txt \
-  --warmup 10 --profile-runs 3 --benchmark-json build/open/mini-val.json
+# 改为已下载归档的实际路径。
+export MODEL_ARCHIVE="$HOME/Downloads/model.zip"
+export SAMPLE_ARCHIVE="$HOME/Downloads/nuScenes-example-data.zip"
+unzip "$MODEL_ARCHIVE" -d "$BEV_ROOT"
+unzip "$SAMPLE_ARCHIVE" -d "$BEV_ROOT"
+for file in camera.backbone.onnx camera.vtransform.onnx fuser.onnx head.bbox.onnx lidar.backbone.xyz.onnx; do
+  test -f "$BEV_ROOT/model/resnet50/$file" || exit 1
+done
+test -f "$BEV_ROOT/example-data/points.tensor"
+
+"$INFER_PYTHON" "$BEV_ROOT/tool/build_fp16_engines.py" \
+  --model-dir "$BEV_ROOT/model/resnet50" \
+  --output-dir "$BEV_ROOT/model/resnet50/build" \
+  --device 0 --workspace-mib 2048
 ```
 
-转换器保留 JPEG 原始字节；计算各传感器采样时刻的坐标变换，合并当前和
-最多九个历史 LiDAR 扫描，再过滤点云范围。默认选择最近九帧历史，等价于
-上游 loader 的 `test_mode=True`；原训练仓库 YAML 未设置该参数时可能随机
-选择九个历史帧。该差异和固定源码版本记录在 manifest，转换不代表精度一致性。
+解压后必须形成 `CUDA-BEVFusion/model/resnet50/` 和 `CUDA-BEVFusion/example-data/`；若归档另包了一层目录，应先整理到此结构。脚本直接调用 TensorRT 10 Python API，不需要 `trtexec`。四个 `.plan` 分别为 `camera.backbone.plan`、`camera.vtransform.plan`、`fuser.plan`、`head.bbox.plan`；`lidar.backbone.xyz.onnx` 则由 `libscn.so` 直接解析执行。
 
-多帧模式一次加载引擎，默认遍历列表所有帧；`--limit N` 可限制帧数，不接受
-`--runs`。每帧先做独立原始检测头预检查，再测一次正常推理；只有第一帧执行
-指定预热次数。逐帧文件读取和标定更新在计时外，结果是预检查后的推理延迟，
-不是实时传感器输入到结果输出的完整应用吞吐。点数超过当前 300,000 容量时，
-转换器会报警并保留原点数，主程序会明确记录实际处理点数。
+引擎使用 FP16、LINEAR/CHW 输入输出和 2048 MiB workspace 上限；内部 TensorRT 层可能混用 FP16/FP32。脚本检查静态形状与输入输出数量，构建失败即退出，并输出逐引擎 metadata、层信息和 `build_fp16_manifest.json`。默认重新构建；只有显式添加 `--reuse` 才会检查 ONNX/外部权重哈希、TensorRT 版本、GPU、配置、插件及引擎完整性后复用。不要直接沿用别人机器生成的 `.plan`。
 
-## 来源与 Autoware 参考
+标准 ResNet50 模型按上述命令构建。若另用带额外自定义算子的模型，构建脚本可重复接收 `--plugin /absolute/path/plugin.so`，但它只负责构建进程加载。C++ 程序目前仅主动加载 `libcustom_layernorm.so`；其他插件还需在推理进程通过 `LD_PRELOAD` 或新增加载代码载入同一库，否则引擎可能无法反序列化。
 
-- [New3DSparseConvolution](https://github.com/riteshkhrn/Lidar_AI_Solution/tree/3f823115cb16d9ddca9561394b9fa49242ab8315/libraries/New3DSparseConvolution)：兼容图引擎来源。
-- [traveller59/spconv](https://github.com/traveller59/spconv/blob/263d6b47425ef843c82f997b12d8b714013d216c/docs/PURE_CPP_BUILD.md)：纯 C++/CUDA 生成和部署方式，源码已在 `third_party/spconv`。
-- [FindDefinition/cumm](https://github.com/FindDefinition/cumm/tree/b8d83b6511b70746d04485d0d2ec00896b735430)：矩阵计算和 tensorview 源码，已在 `third_party/cumm`。
-- [Autoware spconv_cpp](https://github.com/autowarefoundation/spconv_cpp)：参考其独立 C++ 库和部署方式。这里为 SM86 重新生成内核，没有引入 ROS2 或 Autoware 的另一套 ONNX/plugin 接口。
+## 8. 单帧完整推理与计时
 
-源码版本、补丁和保留的许可标记见 [UPSTREAM.md](UPSTREAM.md)。底层
-spconv/cumm 的开源许可不自动覆盖兼容层；上游兼容层混有 NVIDIA 原许可标记，
-本分支保留原文，没有把整个兼容层重新声明为 Apache/MIT。
+程序目前按工作目录解析 `model/resnet50`，因此下面用子 shell 切换到 `CUDA-BEVFusion`；外层仍停留在统一项目根目录。
+
+```bash
+(
+  cd "$BEV_ROOT"
+  "$BEV_BUILD/bevfusion" "$BEV_ROOT/example-data" resnet50 fp16 \
+    --visualization "$RESULT_ROOT/example.jpg"
+)
+
+(
+  cd "$BEV_ROOT"
+  "$BEV_BUILD/bevfusion" "$BEV_ROOT/example-data" resnet50 fp16 \
+    --warmup 10 --runs 100 --profile-runs 3 \
+    --benchmark-json "$RESULT_ROOT/single-frame.json" \
+    --visualization "$RESULT_ROOT/single-frame.jpg"
+)
+```
+
+普通 forward 的同步墙钟时间覆盖点云复制、图像预处理、相机和 LiDAR 分支、融合、检测头与结果回传；模型加载、文件读取、标定更新、预热和可视化写文件不计入该数字。benchmark 还会在预热前执行一次不计时的完整 forward，检查解码前六路检测头输出均为有限值；因此记录的是预检、预热后的运行耗时，不是首次冷启动。
+
+逐阶段 profiling 会插入同步，原来的阶段 `Total` 还排除 `CopyLidar` 和 `ImageNorm`，不能与完整 forward 墙钟时间混用。报告的 FPS 是单帧耗时倒数，不是相机采集或并行流水线吞吐。显存采样来自设备级 `cudaMemGetInfo`，不是进程独占峰值。
+
+## 9. nuScenes mini 多帧输入与测试
+
+准备标准 nuScenes mini 数据目录，包含 `v1.0-mini/*.json`、`samples/` 和 `sweeps/`。转换仅依赖 NumPy，无需 PyTorch、MMCV 或 nuScenes Python SDK。输出目录必须是新目录或空目录。
+
+```bash
+export NUSCENES_ROOT=/data/nuscenes
+export MINI_INPUT="$PROJECT_ROOT/artifacts/mini-val-input"
+"$INFER_PYTHON" "$BEV_ROOT/tool/prepare_nuscenes_mini.py" \
+  --data-root "$NUSCENES_ROOT" --output-dir "$MINI_INPUT" \
+  --split mini_val --copy-images
+
+(
+  cd "$BEV_ROOT"
+  "$BEV_BUILD/bevfusion" resnet50 fp16 \
+    --data-list "$MINI_INPUT/data-list.txt" \
+    --warmup 10 --profile-runs 3 \
+    --benchmark-json "$RESULT_ROOT/mini-val.json"
+)
+```
+
+`mini_val` 为官方两个场景的 81 个关键帧；也可选 `mini_train` 或 `all`，转换及推理均支持 `--limit N`。`--data-list` 每个非空行是一个样本目录，相对路径按列表所在目录解析，`#` 开头整行注释被忽略。多帧模式每帧先执行一次不计时的完整 forward 校验六路检测头，再执行一次计时 forward，不能再传 `--runs`；额外预热只使用首帧。逐帧加载、标定检查和该预检均在计时区间之外，FPS 对应每帧已预检后的测量，不代表新帧第一次运行的冷路径。
+
+转换器使用当前扫描和最近 9 个历史 sweep，依照各传感器采样时刻的 ego pose 变换，历史扫描移除近距离点，按测试范围严格过滤后再转 FP16。与原训练/导出配置可能随机挑选 9 个 sweep 的行为差异会记入 manifest；此流程用于推理健康和性能测试，不声称检测精度等价，也不计算 mAP。
+
+### 每帧输入格式
+
+| 文件 | 内容 |
+| --- | --- |
+| `0-FRONT.jpg`、`1-FRONT_RIGHT.jpg`、`2-FRONT_LEFT.jpg` | 前方三路原始相机 JPEG |
+| `3-BACK.jpg`、`4-BACK_LEFT.jpg`、`5-BACK_RIGHT.jpg` | 后方三路原始相机 JPEG |
+| `points.tensor` | FP16 `[N,5]`，列为 `x,y,z,intensity,time_lag_seconds` |
+| `camera2lidar.tensor` | FP32 `[1,6,4,4]`，各相机到当前 LiDAR 变换 |
+| `camera_intrinsics.tensor` | FP32 `[1,6,4,4]`，扩展相机内参 |
+| `lidar2image.tensor` | FP32 `[1,6,4,4]`，LiDAR 到各相机像素坐标的投影 |
+| `img_aug_matrix.tensor` | FP32 `[1,6,4,4]`，缩放 0.48、裁剪平移 `(-32,-176)` |
+
+标定也接受 `[6,4,4]`。JPEG 保留原始 1600×900 图像，CUDA 在运行时缩放裁剪到 704×256 并归一化；不要预先裁剪后再使用同一组标定。点云范围在 float32 阶段按 `(-54,-54,-5) < (x,y,z) < (54,54,3)` 严格过滤，第五列是秒。当前推理入口最多接收 300,000 点，超出时会截断并在运行记录中反映；准备数据时应检查 manifest 中的点数。
+
+`.tensor` 是本项目带 magic `0x33ff1101`、维数和 dtype 的二进制格式，不能用改名后的 `.npy` 代替。转换脚本直接写入该格式，并输出 `manifest.json` 与可直接消费的 `data-list.txt`。`--copy-images` 适合跨主机传输；默认符号链接只适用于原始图片仍可访问的环境。
+
+## 可选：非方形小模型回归
+
+完成上面的独立检查程序和 Python 环境后，还可用 NumPy 卷积参考检查 8 种 XYZ/ZYX 与 Scatter/Transpose/Reshape 组合：
+
+```bash
+"$INFER_PYTHON" "$BEV_ROOT/tool/generate_sparse_fixture.py" \
+  --output "$SCN_ROOT/fixtures/non_square"
+"$INFER_PYTHON" "$BEV_ROOT/tool/run_sparse_regression.py" \
+  --checker "$SCN_BUILD/sparse_backend_check" \
+  --fixtures "$SCN_ROOT/fixtures/non_square" \
+  --output "$SCN_BUILD/regression"
+```
+
+这是独立小模型数值回归，与完整 BEVFusion 的运行健康检查互为补充。
+
+## 旧 NVIDIA 后端
+
+原后端仍可显式选择 `-DBEVFUSION_SPARSE_BACKEND=nvidia`，但需要单独取得对应 CPU/CUDA 版本的 NVIDIA 预编译库，并使用隔离的构建目录。上面的内置源码步骤均针对 `open` 后端。原项目文档中的 Jetson 配置、INT8 和历史性能表不代表本分支源码后端的当前实测结果。
+
+底层 spconv/cumm 的开源许可不自动覆盖图执行兼容层；兼容层保留上游各文件原许可标记，没有将整个兼容层重新声明为 Apache/MIT。来源、修改与许可说明见 [UPSTREAM.md](UPSTREAM.md)。

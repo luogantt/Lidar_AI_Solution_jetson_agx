@@ -1,17 +1,45 @@
+# BEVFusion：从内置源码构建的稀疏卷积后端
 
+`lg/open-spconv-3070` 分支默认使用 `BEVFUSION_SPARSE_BACKEND=open`。spconv 2.3.8、cumm 0.7.11 和图执行兼容层源码均已纳入项目，可直接审查、修改、编译生成自己的 `libspconv.so` 与 `libscn.so`。当前源码后端支持 FP16，不支持 INT8；完整相机、融合和检测头仍使用 TensorRT。
 
+**从克隆到完整推理，请按 [完整构建与运行指南](libraries/New3DSparseConvolution/README.md) 依次执行。** 指南从统一的 `PROJECT_ROOT` 开始，给出了所有环境变量、可复制命令、输出路径和输入格式，不需要跳回旧 NVIDIA 部署步骤。
 
-[我的项目链接](https://github.com/luogantt/Lidar_AI_Solution/tree/master/CUDA-BEVFusion)
+2026-10-17 已在 **RTX 3090 / CUDA 12.8 / TensorRT 10.13.3.9** 上完成本轮全新源码重建：使用 `f3c9793` 内置源码加 `build_deps.sh` 的部分 venv 恢复修复，在新的依赖/构建目录生成动态库，并重新构建四个 TensorRT 引擎。XYZ/ZYX 数值对照、8/8 非方形回归、官方样例与 mini_val 81/81 帧均通过运行检查。
 
-当前 `lg/open-spconv-3070` 分支默认使用项目内源码构建的稀疏卷积后端。
-源码包含在 `libraries/New3DSparseConvolution/`：`libspconv/` 为兼容层，
-`third_party/spconv/` 和 `third_party/cumm/` 为固定版本的底层源码。
-按 [源码构建说明](libraries/New3DSparseConvolution/README.md) 编译即可生成自己的
-`libspconv.so` 和 `libscn.so`，不需要 NVIDIA 预编译的稀疏卷积库。
-CUDA、cuBLAS 和相机/融合分支的 TensorRT 仍然需要安装；当前源码后端支持 FP16。
+| 本轮完整 FP16 推理 | 平均延迟 | P95 | 单帧串行 FPS |
+| --- | ---: | ---: | ---: |
+| 官方样例重复 100 次 | 19.226500 ms | 19.548640 ms | 52.011548 |
+| mini_val 81 帧 | 22.242601 ms | 23.898073 ms | 44.958771 |
 
-以下为原 Jetson/CUDA 11.4 部署记录，其中关于闭源 `libspconv.so` 的描述仅适用于
-显式选择 `BEVFUSION_SPARSE_BACKEND=nvidia` 的旧后端。
+计时包含正常 forward，排除读取、标定更新、预检、预热和可视化；mini 每帧先预检再测量。数字来自 3090，不是 3070 Ti 实测，也不代表精度评估或相对首次测试的性能提升。完整环境、指标和两次测试的区别见 [分批验证记录](libraries/New3DSparseConvolution/VALIDATION.md#本轮从内置源码全新重建)。
+
+```bash
+git clone --branch lg/open-spconv-3070 --single-branch \
+  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
+cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
+export PROJECT_ROOT="$PWD"
+```
+
+| 步骤 | 做什么 | 产物 / 说明 |
+| --- | --- | --- |
+| [1–2：环境](libraries/New3DSparseConvolution/README.md#2-系统依赖与-cuda-架构) | 安装 GCC、CMake、Python venv、Protobuf 和 CUDA，设置 GPU 架构 | 示例为 Ubuntu 22.04、CUDA 12.8、SM 86 |
+| [3：底层内核](libraries/New3DSparseConvolution/README.md#3-从内置源码生成底层-libspconvso) | `build_deps.sh` 复制项目内源码并生成、编译 CUDA 内核 | `$NEWSCN_DEPS_ROOT/spconv/example/libspconv/build/spconv/src/libspconv.so` |
+| [4：稀疏执行层](libraries/New3DSparseConvolution/README.md#4-编译-libscnso-和独立稀疏卷积检查程序) | CMake 编译兼容层和独立检查程序 | `$SCN_BUILD/libscn.so`、`sparse_backend_check`，不需要 TensorRT |
+| [5–6：完整程序](libraries/New3DSparseConvolution/README.md#5-安装-tensorrt-10-的构建与-python-环境) | 配置 TensorRT 10.13.3.9 头文件/库并编译 | `$BEV_BUILD/bevfusion`、`libbevfusion_core.so`、`open-sparse/libscn.so` |
+| [7：模型与引擎](libraries/New3DSparseConvolution/README.md#7-获取模型与样例构建四个-tensorrt-引擎) | 获取官方 ResNet50 ONNX 与样例，运行 `build_fp16_engines.py` | 四个 FP16 `.plan` 及构建 manifest，不需要 `trtexec` |
+| [8：完整推理](libraries/New3DSparseConvolution/README.md#8-单帧完整推理与计时) | 单帧运行、预热、重复计时和阶段分析 | 可视化 JPEG 与 benchmark JSON |
+| [9：多帧测试](libraries/New3DSparseConvolution/README.md#9-nuscenes-mini-多帧输入与测试) | 将 nuScenes mini 转换为六相机、点云和标定输入 | `data-list.txt`，复用同一 core 逐帧推理 |
+
+本分支生成的 `libspconv.so` 与旧 NVIDIA 库同名，但 API/ABI 不兼容，必须搭配本分支完整程序，不能仅替换旧程序中的一个 `.so`。构建不下载 spconv/cumm 源码或 NVIDIA 预编译稀疏库；Python 通用代码生成依赖仍从 pip 安装，CUDA、cuBLAS、TensorRT 仍需另行安装，所以并非全离线或非 NVIDIA 平台方案。
+
+源码在 [third_party](libraries/New3DSparseConvolution/third_party)，版本及许可证记录见 [source-manifest.json](libraries/New3DSparseConvolution/third_party/source-manifest.json) 和 [UPSTREAM.md](libraries/New3DSparseConvolution/UPSTREAM.md)。修改内置源码后应选择新的 `NEWSCN_DEPS_ROOT` 和构建目录；脚本及 CMake 会拒绝缺少来源状态或与当前源码不一致的旧副本。
+
+RTX 3070 Ti / RTX 3090 可使用 SM 86 构建目标；本分支不能直接运行在瑞芯微 NPU 或华为昇腾上。原项目说明、旧 Jetson 日志和历史性能数字保留在下面，它们不代表本分支源码后端的当前实测结果。
+
+<details>
+<summary>原 Jetson / CUDA 11.4 部署记录（旧 NVIDIA 后端）</summary>
+
+以下关于 NVIDIA 预编译 `libspconv.so` 的描述仅适用于显式选择 `BEVFUSION_SPARSE_BACKEND=nvidia` 的旧后端；不要将其作为上方源码构建流程的必要步骤。
 
  环境是 11.4 ，我是用sdkmanager 刷的系统，各种组件 都刷上了，而且只能通用 ubuntu 本机刷系统 ，虚拟机不行 ，在刷的过程中 需要频繁 连接 。
 ```
@@ -102,6 +130,13 @@ Save to build/cuda-bevfusion.jpg
 
 
 
+
+</font></font></font></font></font>
+</details>
+
+## 原 NVIDIA 项目概览
+
+以下保留上游项目介绍。其 clone 地址会取得原 NVIDIA 仓库；要使用本分支的内置源码后端，请使用本页顶部的地址和构建指南。
 
 <h1 style="text-align: center">Lidar AI Solution</h1>
 This is a highly optimized solution for self-driving 3D-lidar repository.

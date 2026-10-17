@@ -27,7 +27,10 @@ export CUMM_DISABLE_JIT=1 SPCONV_DISABLE_JIT=1
 spconv_rev=263d6b47425ef843c82f997b12d8b714013d216c # v2.3.8
 cumm_rev=b8d83b6511b70746d04485d0d2ec00896b735430   # v0.7.11
 
-if [[ ! -x "${deps_root}/venv/bin/python" ]]; then
+if [[ ! -x "${deps_root}/venv/bin/python" ]] || \
+   ! "${deps_root}/venv/bin/python" -m pip --version >/dev/null 2>&1; then
+  # A failed ensurepip (for example before installing python3-venv) can leave
+  # bin/python behind. Repair that partial environment on the next invocation.
   "${python}" -m venv "${deps_root}/venv"
 fi
 python="${deps_root}/venv/bin/python"
