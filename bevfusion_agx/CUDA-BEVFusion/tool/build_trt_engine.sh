@@ -25,7 +25,11 @@
 
 if [ "$ConfigurationStatus" != "Success" ]; then
     echo "Exit due to configure failure."
-    exit
+    exit 1
+fi
+if [ ! -x "${TensorRT_Bin}/trtexec" ]; then
+    echo "Cannot find ${TensorRT_Bin}/trtexec. For FP16 with TensorRT 10, use tool/build_fp16_engines.py."
+    exit 1
 fi
 
 # tensorrt version

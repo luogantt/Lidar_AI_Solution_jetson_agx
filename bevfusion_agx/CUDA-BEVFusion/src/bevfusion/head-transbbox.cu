@@ -24,7 +24,9 @@
 #include <cuda_fp16.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <numeric>
+#include <stdexcept>
 
 #include "common/check.hpp"
 #include "common/launch.cuh"
@@ -153,6 +155,7 @@ class TransBBoxImplement : public TransBBox {
   }
 
   virtual void print() override { engine_->print("BBox"); }
+  virtual void set_validation(bool enable) override { enable_validation_ = enable; }
 
   virtual std::vector<BoundingBox> forward(const nvtype::half* transfusion_feature, float confidence_threshold, void* stream,
                                            bool sorted) override {
@@ -167,6 +170,7 @@ class TransBBoxImplement : public TransBBox {
           {BindingVel, bindings_[4]},
           {BindingScore, bindings_[5]}
         }, _stream);
+    if (enable_validation_) validate_raw_outputs(_stream);
     checkRuntime(cudaMemsetAsync(output_device_size_, 0, sizeof(unsigned int), _stream));
 
     cuda_linear_launch(decode_kernel, _stream, bindshape_[0][2], bindings_[0], bindings_[1], bindings_[2], bindings_[3],
@@ -188,7 +192,33 @@ class TransBBoxImplement : public TransBBox {
   }
 
  private:
+  void validate_raw_outputs(cudaStream_t stream) const {
+    const char* names[] = {BindingReg, BindingHeight, BindingDim, BindingRot, BindingVel, BindingScore};
+    std::vector<std::vector<std::uint16_t>> host_outputs(bindings_.size());
+    for (size_t i = 0; i < bindings_.size(); ++i) {
+      const size_t elements = std::accumulate(bindshape_[i].begin(), bindshape_[i].end(), size_t{1},
+                                             std::multiplies<size_t>());
+      host_outputs[i].resize(elements);
+    }
+    for (size_t i = 0; i < bindings_.size(); ++i) {
+      checkRuntime(cudaMemcpyAsync(host_outputs[i].data(), bindings_[i], host_outputs[i].size() * sizeof(std::uint16_t),
+                                   cudaMemcpyDeviceToHost, stream));
+    }
+    checkRuntime(cudaStreamSynchronize(stream));
+    for (size_t i = 0; i < host_outputs.size(); ++i) {
+      for (size_t element = 0; element < host_outputs[i].size(); ++element) {
+        // All-ones FP16 exponent identifies both infinity and NaN, without
+        // relying on a float conversion or on which candidates survive decoding.
+        if ((host_outputs[i][element] & 0x7c00u) == 0x7c00u) {
+          throw std::runtime_error("Non-finite raw head output '" + std::string(names[i]) + "' at element " +
+                                   std::to_string(element));
+        }
+      }
+    }
+  }
+
   std::shared_ptr<TensorRT::Engine> engine_;
+  bool enable_validation_ = false;
   std::vector<half*> bindings_;
   std::vector<std::vector<int>> bindshape_;
   TransBBoxParameter param_;

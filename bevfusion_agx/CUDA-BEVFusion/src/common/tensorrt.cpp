@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -163,10 +164,12 @@ class EngineImplement : public Engine {
  public:
   std::shared_ptr<__native_engine_context> context_;
   std::unordered_map<std::string, int> binding_name_to_index_;
+  std::string engine_name_;
 
   virtual ~EngineImplement() = default;
 
   bool construct(const void *data, size_t size, const char *message_name) {
+    engine_name_ = message_name ? message_name : "unnamed";
     context_ = std::make_shared<__native_engine_context>();
     if (!context_->construct(data, size, message_name)) {
       return false;
@@ -210,16 +213,17 @@ class EngineImplement : public Engine {
       auto tensor_name = engine->getIOTensorName(ibinding);
       auto binding_iter = bindings.find(tensor_name);
       if(binding_iter == bindings.end()){
-        printf("Failed to set the tensor address, can not found tensor %s in bindings provided.", tensor_name);
-        return false;
+        throw std::runtime_error("TensorRT engine '" + engine_name_ + "' is missing tensor binding '" + tensor_name + "'");
       }
 
       if(!context->setTensorAddress(tensor_name, (void*)binding_iter->second)){
-        printf("Failed to set tensor address for tensor %s\n", tensor_name);
-        return false;
+        throw std::runtime_error("TensorRT engine '" + engine_name_ + "' failed to set tensor address '" + tensor_name + "'");
       }
     }
-    return context->enqueueV3((cudaStream_t)stream);
+    if (!context->enqueueV3((cudaStream_t)stream)) {
+      throw std::runtime_error("TensorRT engine '" + engine_name_ + "' failed to enqueue inference");
+    }
+    return true;
   }
 
   virtual std::vector<int> run_dims(const std::string &name) override { return run_dims(index(name)); }

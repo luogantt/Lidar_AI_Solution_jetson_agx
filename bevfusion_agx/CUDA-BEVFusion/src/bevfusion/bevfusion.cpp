@@ -216,6 +216,7 @@ class CoreImplement : public Core {
   }
 
   virtual void set_timer(bool enable) override { enable_timer_ = enable; }
+  virtual void set_validation(bool enable) override { transbbox_->set_validation(enable); }
 
   virtual void print() override {
     camera_backbone_->print();

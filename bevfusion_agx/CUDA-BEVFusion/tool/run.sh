@@ -50,4 +50,11 @@ mkdir -p "$BuildDirectory"
 )
 cmake --build "$BuildDirectory" -- -j"${BUILD_JOBS:-2}"
 
-"$BuildDirectory/bevfusion" "$DEBUG_DATA" "$DEBUG_MODEL" "$DEBUG_PRECISION"
+bevfusion_run_args=("$DEBUG_DATA" "$DEBUG_MODEL" "$DEBUG_PRECISION")
+for bevfusion_arg in "$@"; do
+    if [ "$bevfusion_arg" = "--data-list" ]; then
+        bevfusion_run_args=("$DEBUG_MODEL" "$DEBUG_PRECISION")
+        break
+    fi
+done
+"$BuildDirectory/bevfusion" "${bevfusion_run_args[@]}" "$@"

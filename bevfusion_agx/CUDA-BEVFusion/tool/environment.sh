@@ -55,11 +55,6 @@ if [ "$BEVFUSION_SPARSE_BACKEND" = "open" ] && [ "$DEBUG_PRECISION" != "fp16" ];
     echo "The open sparse backend supports FP16 only. Set DEBUG_PRECISION=fp16."
     return 1
 fi
-if [ ! -f "${TensorRT_Bin}/trtexec" ]; then
-    echo "Can not find ${TensorRT_Bin}/trtexec, there may be a mistake in the directory you configured."
-    return 1
-fi
-
 if [ ! -f "${CUDA_Bin}/nvcc" ]; then
     echo "Can not find ${CUDA_Bin}/nvcc, there may be a mistake in the directory you configured."
     return 1

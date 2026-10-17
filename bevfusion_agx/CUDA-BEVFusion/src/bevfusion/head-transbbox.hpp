@@ -72,6 +72,9 @@ class TransBBox {
   virtual std::vector<BoundingBox> forward(const nvtype::half* transfusion_feature, float confidence_threshold, void* stream,
                                            bool sorted_by_conf = false) = 0;
   virtual void print() = 0;
+  // Diagnostic mode: copy all raw head outputs to the host and reject NaN/Inf.
+  // Disabled by default; synchronization and host copies are unsuitable for timing.
+  virtual void set_validation(bool enable) = 0;
 };
 
 std::shared_ptr<TransBBox> create_transbbox(const TransBBoxParameter& param);

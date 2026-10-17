@@ -83,7 +83,7 @@ python3 CUDA-BEVFusion/tool/run_sparse_regression.py \
 
 ## 3. 编译现有 BEVFusion 主程序
 
-安装与运行环境相匹配的 TensorRT 开发头文件、库及 `trtexec`，准备原项目
+安装与运行环境相匹配的 TensorRT 开发头文件及库，准备原项目
 `model/resnet50` 和 `example-data`。TensorRT engine 必须为目标 GPU/版本重新构建。
 
 ```bash
@@ -105,6 +105,56 @@ cmake -S . -B build/open -DBEVFUSION_SPARSE_BACKEND=open \
   -DBEVFUSION_CUDA_ARCH=86 -DNEWSCN_DEPS_ROOT=/absolute/path/to/deps
 cmake --build build/open --parallel 2
 ```
+
+## 4. 完整 FP16 推理测速
+
+TensorRT 10.x 可通过 Python API 构建四个 dense engine，无需 `trtexec`。
+在 `CUDA-BEVFusion` 目录执行，选用已安装 `tensorrt`、`onnx` 的 Python：
+
+```bash
+python3 tool/build_fp16_engines.py --model-dir model/resnet50
+./build/open/bevfusion example-data resnet50 fp16 \
+  --warmup 10 --runs 100 --profile-runs 3 \
+  --benchmark-json build/open/benchmark.json \
+  --visualization build/open/benchmark.jpg
+```
+
+构建脚本默认重建。`--reuse` 仅复用模型/外部权重、GPU、TensorRT、配置和
+引擎哈希均匹配且反序列化检查通过的缓存。FP16 允许内部混合精度 tactic；
+各 engine 的边界 I/O 固定为 FP16、LINEAR。
+
+测速使用正常 `Core::forward` 的同步 CPU 墙钟时间，包含 host 输入拷贝、
+预处理、相机和 LiDAR、融合、检测框解码及结果回传；不包含文件读取、
+引擎加载、标定更新、预热、数值检查和图片保存。单帧 FPS 为平均延迟的倒数，
+没有跨帧并行。阶段 profile 独立执行，其原有 `Total` 不含输入拷贝和图像
+归一化，不能代替端到端延迟。
+
+正式测速前独立检查全部原始检测头输出的 NaN/Inf；执行失败立即退出。
+这项检查和输出图片用于发现运行异常，不等于 nuScenes mAP/NDS 精度评估。
+显存记录是 `cudaMemGetInfo` 的整卡快照，不是进程峰值。
+
+### nuScenes mini 多帧输入
+
+使用原始 `v1.0-mini` JSON、六路相机和 LiDAR 文件，纯 NumPy 转换即可：
+
+```bash
+python3 tool/prepare_nuscenes_mini.py --data-root /data/nuscenes \
+  --output-dir /data/bevfusion-mini-val --split mini_val --copy-images
+./build/open/bevfusion resnet50 fp16 \
+  --data-list /data/bevfusion-mini-val/data-list.txt \
+  --warmup 10 --profile-runs 3 --benchmark-json build/open/mini-val.json
+```
+
+转换器保留 JPEG 原始字节；计算各传感器采样时刻的坐标变换，合并当前和
+最多九个历史 LiDAR 扫描，再过滤点云范围。默认选择最近九帧历史，等价于
+上游 loader 的 `test_mode=True`；原训练仓库 YAML 未设置该参数时可能随机
+选择九个历史帧。该差异和固定源码版本记录在 manifest，转换不代表精度一致性。
+
+多帧模式一次加载引擎，默认遍历列表所有帧；`--limit N` 可限制帧数，不接受
+`--runs`。每帧先做独立原始检测头预检查，再测一次正常推理；只有第一帧执行
+指定预热次数。逐帧文件读取和标定更新在计时外，结果是预检查后的推理延迟，
+不是实时传感器输入到结果输出的完整应用吞吐。点数超过当前 300,000 容量时，
+转换器会报警并保留原点数，主程序会明确记录实际处理点数。
 
 ## 来源与 Autoware 参考
 

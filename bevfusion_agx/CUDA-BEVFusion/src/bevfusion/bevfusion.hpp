@@ -58,6 +58,8 @@ class Core {
 
   virtual void print() = 0;
   virtual void set_timer(bool enable) = 0;
+  // Validate all raw head outputs before filtering boxes; adds diagnostic copies/synchronization.
+  virtual void set_validation(bool enable) = 0;
 
   virtual void update(const float *camera2lidar, const float *camera_intrinsics, const float *lidar2image,
                       const float *img_aug_matrix, void *stream = nullptr) = 0;
