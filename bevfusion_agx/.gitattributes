@@ -1,2 +1,4 @@
 # Shell scripts are executed on Linux, including when prepared on Windows.
 *.sh text eol=lf
+# Keep vendored upstream snapshots byte-for-byte identical on every platform.
+libraries/New3DSparseConvolution/third_party/** -text

@@ -1,5 +1,5 @@
 # Reproducible open sparse backend builds and downloaded validation data.
-libraries/New3DSparseConvolution/_deps/
+libraries/New3DSparseConvolution/_deps*/
 libraries/New3DSparseConvolution/build*/
 libraries/New3DSparseConvolution/fixtures/
 CUDA-BEVFusion/build-open*/

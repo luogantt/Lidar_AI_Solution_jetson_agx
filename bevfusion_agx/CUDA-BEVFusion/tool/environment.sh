@@ -33,7 +33,7 @@ export CUDNN_Lib=${CUDNN_Lib:-/usr/lib/${bevfusion_host_arch}-linux-gnu}
 
 # NVIDIA prebuilt library directory suffix; unused by the source-built open backend.
 export SPCONV_CUDA_VERSION=${SPCONV_CUDA_VERSION:-11.4}
-export BEVFUSION_SPARSE_BACKEND=${BEVFUSION_SPARSE_BACKEND:-nvidia}
+export BEVFUSION_SPARSE_BACKEND=${BEVFUSION_SPARSE_BACKEND:-open}
 if [ "$BEVFUSION_SPARSE_BACKEND" = "open" ]; then
     export DEBUG_MODEL=${DEBUG_MODEL:-resnet50}
     export DEBUG_PRECISION=${DEBUG_PRECISION:-fp16}

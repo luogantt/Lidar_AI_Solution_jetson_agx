@@ -3,6 +3,16 @@
 
 [我的项目链接](https://github.com/luogantt/Lidar_AI_Solution/tree/master/CUDA-BEVFusion)
 
+当前 `lg/open-spconv-3070` 分支默认使用项目内源码构建的稀疏卷积后端。
+源码包含在 `libraries/New3DSparseConvolution/`：`libspconv/` 为兼容层，
+`third_party/spconv/` 和 `third_party/cumm/` 为固定版本的底层源码。
+按 [源码构建说明](libraries/New3DSparseConvolution/README.md) 编译即可生成自己的
+`libspconv.so` 和 `libscn.so`，不需要 NVIDIA 预编译的稀疏卷积库。
+CUDA、cuBLAS 和相机/融合分支的 TensorRT 仍然需要安装；当前源码后端支持 FP16。
+
+以下为原 Jetson/CUDA 11.4 部署记录，其中关于闭源 `libspconv.so` 的描述仅适用于
+显式选择 `BEVFUSION_SPARSE_BACKEND=nvidia` 的旧后端。
+
  环境是 11.4 ，我是用sdkmanager 刷的系统，各种组件 都刷上了，而且只能通用 ubuntu 本机刷系统 ，虚拟机不行 ，在刷的过程中 需要频繁 连接 。
 ```
 nvcc: NVIDIA (R) Cuda compiler driver

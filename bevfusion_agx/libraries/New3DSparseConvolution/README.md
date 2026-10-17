@@ -11,9 +11,14 @@ points → CUDA voxelization → New3DSparseConvolution/libscn.so
                        FP16 LiDAR BEV → 原 TensorRT fuser/head
 ```
 
-`BEVFUSION_SPARSE_BACKEND=nvidia` 是原有默认值；`open` 选择新后端。
+`BEVFUSION_SPARSE_BACKEND=open` 是默认值；`nvidia` 可显式选择原有后端。
 两个 `libspconv.so` 名字相同，API 不同。请使用独立构建目录，并检查 `ldd`
 实际解析的路径。不要把 NVIDIA 的库目录放入 open 后端的 `LD_LIBRARY_PATH`。
+
+兼容图引擎在 `libspconv/`，计算内核和代码生成器的完整源码已纳入
+`third_party/spconv/`、`third_party/cumm/`，可以直接修改、审查和随项目提交。
+open 后端从这些文件生成并编译 `libspconv.so`，构建脚本不从 GitHub 下载
+spconv/cumm，也不使用 NVIDIA 预编译稀疏卷积库。
 
 当前接入范围为 Linux、CUDA、FP16、batch=1、XYZ/ZYX 坐标，以及原有
 BEVFusion 的 SparseConvolution/SubMConv、Add、ReLU 和融合 ScatterDense 尾部。
@@ -23,12 +28,14 @@ INT8、inverse convolution、NCHW32/NHWzC、NVIDIA CUDA Graph/辅助流选项未
 
 ## 1. 构建计算内核
 
-需要 Linux、CMake >= 3.20、GCC、CUDA Toolkit、Python >= 3.10、git/curl 和
+需要 Linux、CMake >= 3.20、GCC、CUDA Toolkit、Python >= 3.10 和
 Protobuf 开发包。Ubuntu 可安装：
 
 ```bash
-sudo apt-get install build-essential cmake curl python3-venv libprotobuf-dev protobuf-compiler
+sudo apt-get install build-essential cmake python3-dev python3-venv libprotobuf-dev protobuf-compiler
 ```
+
+若通过 `PYTHON` 选择自定义 Python，需要安装该版本的开发头文件（`Python.h`）。
 
 从 `bevfusion_agx` 目录执行：
 
@@ -40,11 +47,38 @@ export BUILD_JOBS=2           # 按主机 CPU/RAM 调整，首次编译需要时
 bash libraries/New3DSparseConvolution/build_deps.sh
 ```
 
-脚本在 `_deps` 中建立独立 Python 环境，固定 spconv 2.3.8/cumm 0.7.11
-的源码 commit，生成目标 GPU 的 C++/CUDA 并编译；不需要 PyTorch，也不会
-使用候选仓库附带的二进制。`_deps/build-manifest.txt` 记录构建依赖。
-可设置 `NEWSCN_DEPS_ROOT` 改变依赖位置，并把同一路径传给后续 CMake。
-首次下载失败可以重试；已存在但没有版本记录的源码目录会被拒绝覆盖。
+脚本先核对 `third_party/source-manifest.json` 中固定的 spconv 2.3.8/cumm
+0.7.11 commit 和许可文件，再把当前源码复制到可写的 `_deps`。生成文件、
+独立 Python 环境和编译结果都留在 `_deps`，不会写回 `third_party`。
+`_deps/source-state.json` 记录实际源码树 SHA-256、commit 和许可哈希；
+`_deps/build-manifest.txt` 记录 CUDA、架构、构建脚本哈希及 Python 依赖版本。
+
+源码修改后需要新构建目录。脚本会拒绝没有 `source-state.json` 的旧 `_deps`、
+与当前 vendored 源码指纹不符的目录，以及被直接修改过的已复制源码，避免
+悄悄沿用旧代码。请在 `third_party` 中改源码，用新目录重新生成，然后让
+BEVFusion CMake 使用同一路径，例如：
+
+```bash
+export NEWSCN_DEPS_ROOT="$PWD/libraries/New3DSparseConvolution/_deps-patch1"
+bash libraries/New3DSparseConvolution/build_deps.sh
+# 在 CUDA-BEVFusion 目录执行 tool/run.sh 时会传递此环境变量。
+# 直接调用 CMake 则加 -DNEWSCN_DEPS_ROOT="$NEWSCN_DEPS_ROOT"。
+```
+
+原始归档哈希用于记录来源，不会阻止本地源码补丁；当前源码内容另行计算指纹。
+Python 的 `__pycache__`/`.pyc`/`.pyo` 不参与指纹，其余已复制源码会逐文件核对。
+请勿把编译输出放进 `third_party`。CMake 配置时也通过 `--check-only` 只读核对
+源码及依赖目录来源，未准备、旧版本或不匹配的依赖会被拒绝。
+如果只想检查本地来源和复制行为，不编译 CUDA：
+
+```bash
+python3 libraries/New3DSparseConvolution/prepare_sources.py \
+  --deps-root /tmp/bevfusion-source-check
+```
+
+这不等于完全离线构建：脚本仍通过 pip 安装 NumPy、pccm、ccimport 等通用
+生成/打包依赖；无网络环境需事先准备相应 Python 包。CUDA Toolkit/驱动和
+完整推理使用的 TensorRT 仍依赖 NVIDIA 软件。代码生成和构建不需要 PyTorch。
 
 ## 2. 独立数值验证（不需要 TensorRT）
 
@@ -97,7 +131,7 @@ export TensorRT_Bin=/path/to/TensorRT/bin
 bash tool/run.sh
 ```
 
-`run.sh` 将 open 后端放在 `build/open`；原 NVIDIA 后端继续使用 `build`。
+`run.sh` 将默认 open 后端放在 `build/open`；显式选择的 NVIDIA 后端使用 `build`。
 如果自定义了依赖位置，可直接配置：
 
 ```bash
@@ -159,7 +193,8 @@ python3 tool/prepare_nuscenes_mini.py --data-root /data/nuscenes \
 ## 来源与 Autoware 参考
 
 - [New3DSparseConvolution](https://github.com/riteshkhrn/Lidar_AI_Solution/tree/3f823115cb16d9ddca9561394b9fa49242ab8315/libraries/New3DSparseConvolution)：兼容图引擎来源。
-- [traveller59/spconv](https://github.com/traveller59/spconv/blob/v2.3.8/docs/PURE_CPP_BUILD.md)：纯 C++/CUDA 生成和部署方式。
+- [traveller59/spconv](https://github.com/traveller59/spconv/blob/263d6b47425ef843c82f997b12d8b714013d216c/docs/PURE_CPP_BUILD.md)：纯 C++/CUDA 生成和部署方式，源码已在 `third_party/spconv`。
+- [FindDefinition/cumm](https://github.com/FindDefinition/cumm/tree/b8d83b6511b70746d04485d0d2ec00896b735430)：矩阵计算和 tensorview 源码，已在 `third_party/cumm`。
 - [Autoware spconv_cpp](https://github.com/autowarefoundation/spconv_cpp)：参考其独立 C++ 库和部署方式。这里为 SM86 重新生成内核，没有引入 ROS2 或 Autoware 的另一套 ONNX/plugin 接口。
 
 源码版本、补丁和保留的许可标记见 [UPSTREAM.md](UPSTREAM.md)。底层

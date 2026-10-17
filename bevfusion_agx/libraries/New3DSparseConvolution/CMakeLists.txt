@@ -5,9 +5,25 @@ find_package(CUDAToolkit REQUIRED)
 find_package(OpenMP REQUIRED)
 
 set(NEWSCN_DEPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/_deps" CACHE PATH "Isolated open spconv dependencies")
-set(SPCONV_GENERATED_ROOT "${NEWSCN_DEPS_ROOT}/spconv/example/libspconv" CACHE PATH "Generated spconv C++ project")
-set(CUMM_SOURCE_ROOT "${NEWSCN_DEPS_ROOT}/cumm" CACHE PATH "cumm source with tensorview headers")
-set(OPEN_SPCONV_LIBRARY "${SPCONV_GENERATED_ROOT}/build/spconv/src/libspconv.so" CACHE FILEPATH "Open source generated spconv shared library (not NVIDIA's library)")
+# Recompute these paths on every configure. Independent cache entries would
+# silently retain the old backend when NEWSCN_DEPS_ROOT changes after a patch.
+set(SPCONV_GENERATED_ROOT "${NEWSCN_DEPS_ROOT}/spconv/example/libspconv")
+set(CUMM_SOURCE_ROOT "${NEWSCN_DEPS_ROOT}/cumm")
+set(OPEN_SPCONV_LIBRARY "${SPCONV_GENERATED_ROOT}/build/spconv/src/libspconv.so")
+
+find_package(Python3 3.10 COMPONENTS Interpreter REQUIRED)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/prepare_sources.py"
+          --source-root "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+          --deps-root "${NEWSCN_DEPS_ROOT}" --check-only
+  RESULT_VARIABLE NEWSCN_SOURCE_CHECK_RESULT
+  OUTPUT_VARIABLE NEWSCN_SOURCE_CHECK_OUTPUT
+  ERROR_VARIABLE NEWSCN_SOURCE_CHECK_ERROR)
+if(NOT NEWSCN_SOURCE_CHECK_RESULT EQUAL 0)
+  message(FATAL_ERROR
+    "Open backend source verification failed.\n${NEWSCN_SOURCE_CHECK_OUTPUT}${NEWSCN_SOURCE_CHECK_ERROR}\n"
+    "Run libraries/New3DSparseConvolution/build_deps.sh with the same NEWSCN_DEPS_ROOT first.")
+endif()
 
 foreach(required_path "${OPEN_SPCONV_LIBRARY}" "${SPCONV_GENERATED_ROOT}/spconv/include/spconvlib" "${CUMM_SOURCE_ROOT}/include/tensorview")
   if(NOT EXISTS "${required_path}")

@@ -244,8 +244,13 @@ using BoundingBox = bevfusion::head::transbbox::BoundingBox;
 
 struct RunOptions {
   std::string data = "example-data";
+#ifdef BEVFUSION_SPARSE_BACKEND_OPEN
+  std::string model = "resnet50";
+  std::string precision = "fp16";
+#else
   std::string model = "resnet50int8";
   std::string precision = "int8";
+#endif
   bool benchmark = false;
   int warmup = 10;
   int runs = 100;

@@ -27,7 +27,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(_sparse_backend_default nvidia)
+set(_sparse_backend_default open)
 if(DEFINED ENV{BEVFUSION_SPARSE_BACKEND})
   set(_sparse_backend_default "$ENV{BEVFUSION_SPARSE_BACKEND}")
 endif()
@@ -150,6 +150,9 @@ target_link_libraries(bevfusion_core
   ${BEVFUSION_SPARSE_TARGET} ${Protobuf_LIBRARIES})
 
 cuda_add_executable(bevfusion src/main.cpp ${VISUALIZE_FILES})
+if(BEVFUSION_SPARSE_BACKEND STREQUAL "open")
+  target_compile_definitions(bevfusion PRIVATE BEVFUSION_SPARSE_BACKEND_OPEN=1)
+endif()
 target_link_libraries(bevfusion bevfusion_core ${CMAKE_DL_LIBS})
 
 cuda_add_library(custom_layernorm SHARED src/plugins/custom_layernorm.cu)
