@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">BEVFusion open sparse backend architecture</title>
+  <desc id="desc">Six cameras and LiDAR are processed in separate branches, fused in BEV space, and decoded into 3D boxes. The LiDAR branch uses source-built libscn and libspconv instead of NVIDIA's closed sparse library.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071526"/>
+      <stop offset="1" stop-color="#102b3b"/>
+    </linearGradient>
+    <linearGradient id="open" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".24"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#93c5fd"/>
+    </marker>
+    <style>
+      .title{font:700 34px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#f8fafc}
+      .subtitle{font:400 18px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#a5c6df}
+      .boxTitle{font:700 20px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#f8fafc}
+      .boxText{font:400 15px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#dbeafe}
+      .small{font:400 14px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#a5c6df}
+      .tag{font:700 14px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#052e2b}
+      .flow{stroke:#93c5fd;stroke-width:4;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1400" height="760" rx="28" fill="url(#bg)"/>
+  <text x="70" y="68" class="title">BEVFusion 推理：源码可构建的稀疏卷积后端</text>
+  <text x="70" y="102" class="subtitle">master 默认路径：Camera + LiDAR → BEV 融合 → 3D 检测</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="160" width="210" height="130" rx="20" fill="#17364d" stroke="#3b82f6" stroke-width="2"/>
+    <text x="175" y="205" text-anchor="middle" class="boxTitle">六路相机</text>
+    <text x="175" y="238" text-anchor="middle" class="boxText">RGB 图像</text>
+    <text x="175" y="264" text-anchor="middle" class="small">camera input</text>
+
+    <rect x="360" y="160" width="240" height="130" rx="20" fill="#17364d" stroke="#3b82f6" stroke-width="2"/>
+    <text x="480" y="205" text-anchor="middle" class="boxTitle">相机分支</text>
+    <text x="480" y="238" text-anchor="middle" class="boxText">ResNet50 + View Transform</text>
+    <text x="480" y="264" text-anchor="middle" class="small">TensorRT + CUDA</text>
+
+    <rect x="70" y="420" width="210" height="130" rx="20" fill="#17364d" stroke="#22c55e" stroke-width="2"/>
+    <text x="175" y="465" text-anchor="middle" class="boxTitle">LiDAR 点云</text>
+    <text x="175" y="498" text-anchor="middle" class="boxText">体素化输入</text>
+    <text x="175" y="524" text-anchor="middle" class="small">point cloud</text>
+
+    <rect x="340" y="388" width="360" height="194" rx="24" fill="url(#open)"/>
+    <rect x="365" y="407" width="158" height="28" rx="14" fill="#ccfbf1"/>
+    <text x="444" y="427" text-anchor="middle" class="tag">项目内源码构建</text>
+    <text x="520" y="475" text-anchor="middle" class="boxTitle">LiDAR 稀疏主干</text>
+    <text x="520" y="510" text-anchor="middle" class="boxText">libscn.so：网络执行与适配</text>
+    <text x="520" y="540" text-anchor="middle" class="boxText">libspconv.so：索引与稀疏卷积内核</text>
+    <text x="520" y="565" text-anchor="middle" class="small">spconv 2.3.8 + cumm 0.7.11 / FP16</text>
+
+    <rect x="790" y="260" width="250" height="190" rx="24" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
+    <text x="915" y="315" text-anchor="middle" class="boxTitle">BEV 特征融合</text>
+    <text x="915" y="352" text-anchor="middle" class="boxText">Camera BEV</text>
+    <text x="915" y="380" text-anchor="middle" class="boxText">+</text>
+    <text x="915" y="408" text-anchor="middle" class="boxText">LiDAR BEV</text>
+
+    <rect x="1125" y="260" width="210" height="190" rx="24" fill="#713f12" stroke="#f59e0b" stroke-width="2"/>
+    <text x="1230" y="315" text-anchor="middle" class="boxTitle">检测头</text>
+    <text x="1230" y="350" text-anchor="middle" class="boxText">TransFusion</text>
+    <text x="1230" y="382" text-anchor="middle" class="boxText">3D boxes</text>
+    <text x="1230" y="415" text-anchor="middle" class="small">TensorRT + CUDA</text>
+  </g>
+
+  <path d="M280 225 H350" class="flow"/>
+  <path d="M600 225 C700 225 710 315 780 330" class="flow"/>
+  <path d="M280 485 H330" class="flow"/>
+  <path d="M700 485 C740 485 750 405 780 390" class="flow"/>
+  <path d="M1040 355 H1115" class="flow"/>
+
+  <rect x="70" y="645" width="1265" height="70" rx="18" fill="#0b2131" stroke="#ef4444" stroke-width="2" stroke-dasharray="8 8"/>
+  <text x="95" y="674" class="boxText">默认推理链路不再加载 NVIDIA 官方预编译的闭源 libspconv.so</text>
+  <text x="95" y="700" class="small">说明：这不是闭源库的源码或 ABI 替换件；必须配套本项目的 libscn、解析器和完整程序。CUDA、cuBLAS、TensorRT 仍为运行依赖。</text>
+</svg>

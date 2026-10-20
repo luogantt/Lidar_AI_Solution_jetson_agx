@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">RTX 3090 BEVFusion FP16 benchmark</title>
+  <desc id="desc">Official sample averaged 19.2265 milliseconds and 52.0115 FPS. The 81-frame mini validation sequence averaged 22.2426 milliseconds and 44.9588 FPS.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8fafc"/><stop offset="1" stop-color="#e0f2fe"/></linearGradient>
+    <linearGradient id="bar1"><stop stop-color="#0284c7"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+    <linearGradient id="bar2"><stop stop-color="#0f766e"/><stop offset="1" stop-color="#2dd4bf"/></linearGradient>
+    <style>
+      .title{font:700 30px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#0f172a}
+      .text{font:600 19px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#0f172a}
+      .small{font:400 15px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#475569}
+      .value{font:700 21px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#fff}
+      .fps{font:700 24px 'Segoe UI','Microsoft YaHei',sans-serif;fill:#0f172a}
+    </style>
+  </defs>
+  <rect width="1200" height="520" rx="28" fill="url(#bg)"/>
+  <text x="60" y="62" class="title">完整 BEVFusion · ResNet50 FP16 · RTX 3090</text>
+  <text x="60" y="96" class="small">正常 forward 热输入计时；不含文件读取、模型加载、预检、预热与可视化</text>
+
+  <text x="60" y="170" class="text">官方单帧样例（100 次）</text>
+  <rect x="330" y="135" width="548" height="58" rx="14" fill="url(#bar1)"/>
+  <text x="853" y="172" text-anchor="end" class="value">19.23 ms</text>
+  <rect x="985" y="130" width="155" height="68" rx="18" fill="#bae6fd"/>
+  <text x="1062" y="173" text-anchor="middle" class="fps">52.01 FPS</text>
+
+  <text x="60" y="288" class="text">mini_val（81 帧）</text>
+  <rect x="330" y="253" width="633" height="58" rx="14" fill="url(#bar2)"/>
+  <text x="938" y="290" text-anchor="end" class="value">22.24 ms</text>
+  <rect x="985" y="248" width="155" height="68" rx="18" fill="#99f6e4"/>
+  <text x="1062" y="291" text-anchor="middle" class="fps">44.96 FPS</text>
+
+  <line x1="330" y1="410" x2="1042" y2="410" stroke="#94a3b8" stroke-width="2"/>
+  <g class="small" text-anchor="middle">
+    <text x="330" y="438">0 ms</text><text x="472" y="438">5</text><text x="615" y="438">10</text><text x="757" y="438">15</text><text x="900" y="438">20</text><text x="1042" y="438">25 ms</text>
+  </g>
+  <g stroke="#cbd5e1" stroke-width="1">
+    <line x1="472" y1="400" x2="472" y2="420"/><line x1="615" y1="400" x2="615" y2="420"/><line x1="757" y1="400" x2="757" y2="420"/><line x1="900" y1="400" x2="900" y2="420"/><line x1="1042" y1="400" x2="1042" y2="420"/>
+  </g>
+  <text x="60" y="486" class="small">验证范围：FP16 / batch=1 / CUDA 12.8 / TensorRT 10.13.3.9。未计算 nuScenes mAP/NDS。</text>
+</svg>

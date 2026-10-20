@@ -4,6 +4,19 @@
 
 自 2026-10-20 起，原 `lg/open-spconv-3070` 实现由 `master` 维护；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Lidar_AI_Solution_jetson_agx/tree/orin-AgX) 分支。
 
+这是一个面向部署的 **BEVFusion C++/CUDA 推理项目**：六路相机和 LiDAR 点云分别提取 BEV 特征，完成融合后输出三维检测框。默认路径已经不再加载 NVIDIA 项目附带的预编译闭源 `libspconv.so`；新的底层库由项目内 spconv/cumm 源码生成，并与源码可见的 `libscn.so` 执行层配套使用。它仍然需要 CUDA、cuBLAS 和 TensorRT。
+
+![当前 master 分支的 BEVFusion 与源码稀疏后端架构](docs/images/open-sparse-architecture.svg)
+
+## 先看这里
+
+| 内容 | 入口 |
+| --- | --- |
+| 项目介绍文章 | [BEVFusion 推理：用源码可构建的稀疏卷积后端替代闭源动态库](docs/BEVFUSION_OPEN_SPARSE_BACKEND.md) |
+| 从零编译与推理 | [完整构建与运行指南](libraries/New3DSparseConvolution/README.md) |
+| 实测环境与原始指标 | [GPU 分批验证记录](libraries/New3DSparseConvolution/VALIDATION.md) |
+| 两个动态库的源码来源 | [源码与许可证说明](libraries/New3DSparseConvolution/UPSTREAM.md) |
+
 **从克隆到完整推理，请按 [完整构建与运行指南](libraries/New3DSparseConvolution/README.md) 依次执行。** 指南从统一的 `PROJECT_ROOT` 开始，给出了所有环境变量、可复制命令、输出路径和输入格式，不需要跳回旧 NVIDIA 部署步骤。
 
 2026-10-17 已在 **RTX 3090 / CUDA 12.8 / TensorRT 10.13.3.9** 上完成本轮全新源码重建：使用 `f3c9793` 内置源码加 `build_deps.sh` 的部分 venv 恢复修复，在新的依赖/构建目录生成动态库，并重新构建四个 TensorRT 引擎。XYZ/ZYX 数值对照、8/8 非方形回归、官方样例与 mini_val 81/81 帧均通过运行检查。
@@ -14,6 +27,8 @@
 | mini_val 81 帧 | 22.242601 ms | 23.898073 ms | 44.958771 |
 
 计时包含正常 forward，排除读取、标定更新、预检、预热和可视化；mini 每帧先预检再测量。数字来自 3090，不是 3070 Ti 实测，也不代表精度评估或相对首次测试的性能提升。完整环境、指标和两次测试的区别见 [分批验证记录](libraries/New3DSparseConvolution/VALIDATION.md#本轮从内置源码全新重建)。
+
+![RTX 3090 上官方样例的完整推理可视化](docs/images/official-sample.jpg)
 
 ```bash
 git clone --branch master --single-branch \
