@@ -1,6 +1,6 @@
 # 从内置源码构建稀疏卷积与完整 BEVFusion
 
-本指南对应 `lg/open-spconv-3070` 分支。默认后端为 `open`，支持 FP16；INT8 会被明确拒绝。底层 spconv、cumm 源码已纳入本项目，构建不下载它们的 GitHub 源码，也不使用 NVIDIA 预编译的稀疏卷积库。CUDA、cuBLAS 和完整 BEVFusion 所需的 TensorRT 仍是 NVIDIA 软件；Python 代码生成依赖仍通过 pip 安装，因此这不是全离线构建。
+本指南对应 `master` 分支（原 `lg/open-spconv-3070`）。默认后端为 `open`，支持 FP16；INT8 会被明确拒绝。底层 spconv、cumm 源码已纳入本项目，构建不下载它们的 GitHub 源码，也不使用 NVIDIA 预编译的稀疏卷积库。CUDA、cuBLAS 和完整 BEVFusion 所需的 TensorRT 仍是 NVIDIA 软件；Python 代码生成依赖仍通过 pip 安装，因此这不是全离线构建。
 
 生成的底层库也叫 `libspconv.so`，但它与旧 NVIDIA 同名库的 API/ABI **不兼容**。请搭配本分支的 `libscn.so`、解析器和 BEVFusion 程序使用，不能把它直接复制覆盖旧程序的 NVIDIA 库。
 
@@ -24,7 +24,7 @@
 以下命令在 Linux Bash 下执行。除显式括号中的子 shell 外，始终停留在项目根目录 `bevfusion_agx`，并在同一 shell 中依次执行。不要使用旧 NVIDIA 仓库的 clone 命令替代这里的地址。
 
 ```bash
-git clone --branch lg/open-spconv-3070 --single-branch \
+git clone --branch master --single-branch \
   https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
 cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
 export PROJECT_ROOT="$PWD"

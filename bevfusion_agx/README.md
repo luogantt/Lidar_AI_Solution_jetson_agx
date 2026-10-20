@@ -1,6 +1,8 @@
 # BEVFusion：从内置源码构建的稀疏卷积后端
 
-`lg/open-spconv-3070` 分支默认使用 `BEVFUSION_SPARSE_BACKEND=open`。spconv 2.3.8、cumm 0.7.11 和图执行兼容层源码均已纳入项目，可直接审查、修改、编译生成自己的 `libspconv.so` 与 `libscn.so`。当前源码后端支持 FP16，不支持 INT8；完整相机、融合和检测头仍使用 TensorRT。
+`master` 分支默认使用 `BEVFUSION_SPARSE_BACKEND=open`。spconv 2.3.8、cumm 0.7.11 和图执行兼容层源码均已纳入项目，可直接审查、修改、编译生成自己的 `libspconv.so` 与 `libscn.so`。当前源码后端支持 FP16，不支持 INT8；完整相机、融合和检测头仍使用 TensorRT。
+
+自 2026-10-20 起，原 `lg/open-spconv-3070` 实现由 `master` 维护；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Lidar_AI_Solution_jetson_agx/tree/orin-AgX) 分支。
 
 **从克隆到完整推理，请按 [完整构建与运行指南](libraries/New3DSparseConvolution/README.md) 依次执行。** 指南从统一的 `PROJECT_ROOT` 开始，给出了所有环境变量、可复制命令、输出路径和输入格式，不需要跳回旧 NVIDIA 部署步骤。
 
@@ -14,7 +16,7 @@
 计时包含正常 forward，排除读取、标定更新、预检、预热和可视化；mini 每帧先预检再测量。数字来自 3090，不是 3070 Ti 实测，也不代表精度评估或相对首次测试的性能提升。完整环境、指标和两次测试的区别见 [分批验证记录](libraries/New3DSparseConvolution/VALIDATION.md#本轮从内置源码全新重建)。
 
 ```bash
-git clone --branch lg/open-spconv-3070 --single-branch \
+git clone --branch master --single-branch \
   https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
 cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
 export PROJECT_ROOT="$PWD"
