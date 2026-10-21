@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | [BEVFusion](bevfusion_agx/README.md) | 六路相机 + LiDAR | 解码后的三维检测框和可视化 | C++、CUDA、TensorRT，以及源码构建的稀疏卷积后端 | RTX 3090 |
 | [BEVFormer TensorRT](bevformer-tensorrt/README.md) | 六路相机 | BEV 特征、分类 logits 和三维框编码 | Python、TensorRT，支持 FP32 与混合 INT8/FP16 | RTX 3070 Ti Laptop |
-| [SimLingo 量化](simlingo-quantization/README.md) | 前视相机 + 车速 + 目标点 | Qwen logits smoke、路线与速度 waypoint | PyTorch；默认 BF16 边界 + NF4，可选 FP16 边界实验 | RTX 3070 Ti Laptop |
+| [SimLingo 量化](simlingo-quantization/README.md) | 前视相机 + 车速 + 目标点 | Qwen logits smoke、路线与速度 waypoint | PyTorch BF16 与 bitsandbytes NF4，包含持久化导出和重载 | RTX 3070 Ti Laptop |
 
 三个目录可以独立安装和运行。BEVFusion 提供完整多传感器三维检测链路；BEVFormer TensorRT 当前交付固定形状的完整网络到检测头原始输出；SimLingo 子项目从官方 PyTorch checkpoint 生成 BF16/NF4 artifact，并重组为完整视觉语言驾驶模型。
 
@@ -97,7 +97,7 @@ BEVFormer 的计时只覆盖 TensorRT engine 提交到 GPU 完成的设备时间
 
 ## SimLingo：RTX 3070 PyTorch/NF4 量化
 
-`simlingo-quantization` 使用官方 SimLingo PyTorch checkpoint 和 InternVL2-1B 基础模型，在 CPU 合并 Qwen2 LoRA 后，只量化语言 transformer 内部的 168 个线性层。默认且推荐的配置保持 InternViT、token embeddings、`lm_head`、waypoint encoder 和驾驶输出头为 BF16；另提供将这些浮点边界改为 FP16、Qwen 168 层继续使用 NF4 的 opt-in 实验配置。
+`simlingo-quantization` 使用官方 SimLingo PyTorch checkpoint 和 InternVL2-1B 基础模型，在 CPU 合并 Qwen2 LoRA 后，只量化语言 transformer 内部的 168 个线性层。InternViT、token embeddings、`lm_head`、waypoint encoder 和驾驶输出头保持 BF16。
 
 官方当前没有发布 SimLingo ONNX、TensorRT engine 或量化权重。这个子项目提供固定 revision 下载与 SHA-256 校验、最小上游源码快照、BF16/NF4/实验性 INT8 基准、持久化 artifact 导出、从磁盘重载对照，以及将拆分权重重组为完整 `DrivingModel` 的加载器。
 
@@ -116,36 +116,6 @@ NF4 的训练后状态导出 payload 为 1286.06 MiB，比对应 BF16 payload �
 - [RTX 3070 Ti 验证记录](simlingo-quantization/docs/validation-rtx3070ti.md)
 - [最终整链路原始结果](simlingo-quantization/results/rtx3070ti/full-pipeline-smoke.json)
 
-### FP16 边界 + Qwen 168 层 NF4（实验）
-
-同一台 RTX 3070 Ti Laptop 上补充测试了四种 560-token 语言模型组合；每组均预热 10 次、测量 50 次：
-
-| seq560 配置 | Mean | P90 | 峰值 CUDA 显存 |
-| --- | ---: | ---: | ---: |
-| Dense BF16 边界 | 40.0197 ms | 40.3828 ms | 1997.49 MiB |
-| Dense FP16 边界 | 36.8185 ms | 37.0839 ms | 1997.49 MiB |
-| Qwen 168 层 NF4 + BF16 边界 | 46.8083 ms | 47.2070 ms | 1483.96 MiB |
-| Qwen 168 层 NF4 + FP16 边界 | 48.0029 ms | 48.3000 ms | 1483.96 MiB |
-
-FP16/NF4 的持久化语言 artifact 验证通过：hidden cosine 为 0.941288、logits cosine 为 0.960320，top-1 相同、top-5 重合 4/5。FP16 训练后 payload 为 1792.23 MiB，FP16/NF4 payload 为 1286.06 MiB，下降 28.2422%。相对 dense FP16，seq560 峰值显存下降 25.7088%。
-
-但完整合成 RGB 链路中，FP16/NF4 的 route waypoint MAE 为 **0.051497**，超过预先设定的 smoke 阈值 **0.05**；虽然所有浮点边界 dtype 审计、有限值检查和其余阈值均通过，该完整链路仍判定为未通过。它只作为显式选择的实验配置，默认推荐仍是原 BF16 边界 + NF4，不把这组结果解释为真实驾驶精度。
-
-```bash
-cd simlingo-quantization
-python export_quantized_artifacts.py \
-  --model-dir models/simlingo \
-  --output-dir artifacts/simlingo-3070-fp16-nf4 \
-  --boundary-dtype fp16
-```
-
-实验详情和原始数据：
-
-- [FP16 边界完整验证说明](simlingo-quantization/docs/validation-rtx3070ti.md#fp16-边界--qwen-168-层-nf4实验补充)
-- [实验结论摘要 JSON](simlingo-quantization/results/rtx3070ti/mixed-fp16-nf4/evaluation-summary.json)
-- [持久化语言 artifact 验证 JSON](simlingo-quantization/results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-artifact-validation.json)
-- [FP16/NF4 完整链路 JSON](simlingo-quantization/results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-full-pipeline.json)
-
 ## 获取代码
 
 ```bash
@@ -161,6 +131,6 @@ cd Robot_infer
 - BEVFusion 当前公开性能来自物理 RTX 3090；RTX 3070 Ti 与 RTX 3090 都是 SM 86，但不能据此假定二者性能相同。
 - BEVFusion 已跑通官方样例与 nuScenes mini_val 81 帧，但本轮没有计算 nuScenes mAP/NDS。
 - BEVFormer 当前图内相机投影和 CAN-bus 元数据在导出时固定，无历史 BEV，输出仍是检测头原始张量。
-- SimLingo 的 NF4 结果来自固定合成提示与合成 RGB 图像，没有真实样本标签、Bench2Drive 或 CARLA Driving Score；量化节省显存，但没有在 3070 Ti 上加速。FP16 边界实验的语言 artifact 通过，但完整链路 route MAE 超过预设门槛，因此没有替换默认 BF16/NF4。
+- SimLingo 的 NF4 结果来自固定合成提示与合成 RGB 图像，没有真实样本标签、Bench2Drive 或 CARLA Driving Score；量化节省显存，但没有在 3070 Ti 上加速。
 - 三个项目都面向 NVIDIA CUDA 环境，不能直接部署到瑞芯微 NPU 或华为昇腾。
 - 模型、数据集和第三方代码继续遵循各自许可证；仓库中的源码许可证不自动覆盖模型权重或数据集。

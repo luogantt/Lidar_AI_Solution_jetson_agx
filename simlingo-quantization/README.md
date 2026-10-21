@@ -1,10 +1,10 @@
 # SimLingo RTX 3070 PyTorch 量化
 
-这个子项目在 RTX 3070/3070 Ti 上重建官方 SimLingo PyTorch 模型，合并 Qwen2 的 PEFT LoRA，并导出可重复加载的 bitsandbytes NF4 权重。默认且推荐的 BF16 配置保持视觉编码器、语言嵌入、`lm_head` 和驾驶输出头为 BF16，只量化 Qwen transformer 内部的 168 个 `Linear` 层。项目也支持用 `--boundary-dtype fp16` 将这些浮点边界和 NF4 compute dtype 改为 FP16；该配置目前是 opt-in 实验方案。
+这个子项目在 RTX 3070/3070 Ti 上重建官方 SimLingo PyTorch 模型，合并 Qwen2 的 PEFT LoRA，并导出可重复加载的 bitsandbytes NF4 权重。视觉编码器、语言嵌入、`lm_head` 和驾驶输出头保持 BF16；只量化 Qwen transformer 内部的 168 个 `Linear` 层。
 
 截至本项目固定的官方版本，上游只发布了 PyTorch `pytorch_model.pt`，没有发布 ONNX、TensorRT engine 或官方量化模型。整网包含动态视觉 token、Python 数据结构和自回归生成流程，不适合直接一键导出 ONNX，因此当前交付选择了可验证、改动范围清楚的 PyTorch 权重量化路线。
 
-## 3070 Ti 默认 BF16 边界实测结论
+## 3070 Ti 实测结论
 
 2026-10-21 在 NVIDIA GeForce RTX 3070 Ti Laptop GPU 8 GB、CUDA 12.1、PyTorch 2.2.0 和 bitsandbytes 0.44.1 上完成真实模型加载、LoRA 合并、量化、持久化、重新加载和基准测试。最终 NF4 artifact 还完成了合成 RGB 图像到路线与速度 waypoint 的整链路 smoke test。
 
@@ -19,55 +19,6 @@
 完整合成图像链路中，BF16 平均 114.35 ms、峰值 2011.42 MiB，NF4 平均 133.68 ms、峰值 1498.98 MiB。NF4 路线 waypoint 相对 BF16 的 mean absolute difference 为 0.0347、cosine 为 0.999978；这些数值只证明相同输入上的整网连通与接近程度，不是相对真实标签的驾驶精度。
 
 第一张表测量语言骨干，整链路数据使用合成图像；两者都不是 CARLA 闭环帧率。原始 JSON、测试口径和限制见 [RTX 3070 Ti 验证记录](docs/validation-rtx3070ti.md)。
-
-## FP16 边界 + Qwen 168 层 NF4 实验
-
-这一档把 InternViT、输入 embedding、`lm_head`、waypoint encoder 和驾驶头改为 FP16；Qwen transformer 内部 168 个线性层使用 bitsandbytes NF4，反量化计算 dtype 也是 FP16。它与原 BF16/NF4 配置使用同一 checkpoint、同一合并后的 LoRA 和同一测试输入。
-
-四组 seq560 均为 batch 1、预热 10 次、测量 50 次，并物化完整 Qwen logits：
-
-| 配置 | 参数存储 | Mean | P50 | P90 | 峰值 CUDA |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| [Dense BF16 边界](results/rtx3070ti/mixed-fp16-nf4/mixed-control-bf16-seq560.json) | 1792.14 MiB | 40.0197 ms | 39.9433 ms | 40.3828 ms | 1997.49 MiB |
-| [Dense FP16 边界](results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-seq560.json) | 1792.14 MiB | 36.8185 ms | 36.7031 ms | 37.0839 ms | 1997.49 MiB |
-| [NF4 + BF16 边界](results/rtx3070ti/mixed-fp16-nf4/mixed-control-nf4-bf16-seq560.json) | 1280.27 MiB | 46.8083 ms | 46.8858 ms | 47.2070 ms | 1483.96 MiB |
-| [NF4 + FP16 边界](results/rtx3070ti/mixed-fp16-nf4/mixed-nf4-fp16-seq560.json) | 1280.27 MiB | 48.0029 ms | 47.9641 ms | 48.3000 ms | 1483.96 MiB |
-
-相对 dense FP16，NF4/FP16 的 seq560 峰值显存下降 **25.7088%**，平均延迟增加 **30.3771%**；它相对 NF4/BF16 的平均延迟增加 **2.5521%**。Dense FP16 相对 dense BF16 的平均延迟下降 7.9991%。这些数字只覆盖一次合成 embedding 的完整语言模型 forward。
-
-FP16 artifact 使用以下名称，和旧 BF16 文件并存，不改变不带参数命令的默认布局：
-
-```text
-artifacts/simlingo-3070-fp16-nf4/
-├── non_language_fp16.safetensors
-├── llm_merged_fp16/
-├── llm_bnb_nf4_fp16/
-├── processor/
-├── simlingo-config.yaml
-└── artifact-manifest.json
-```
-
-训练后 dense FP16 payload 为 1,879,283,962 bytes（1792.23 MiB），FP16/NF4 payload 为 1,348,533,294 bytes（1286.06 MiB），下降 **28.2422%**。其中非语言 FP16 状态为 591.21 MiB、dense FP16 LLM 为 1201.02 MiB、NF4/FP16 LLM 为 694.86 MiB；这些数字不包含仍需保留的 InternVL2-1B 基础快照。
-
-持久化语言 artifact 从磁盘重载后通过预设 smoke 门槛：
-
-| artifact | Mean | P90 | 峰值 CUDA | Hidden cosine | Logits cosine | Top-1 / Top-5 |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Dense FP16 | 24.6243 ms | 25.1251 ms | 1239.01 MiB | — | — | 基线 |
-| NF4 + FP16 边界 | 44.7854 ms | 45.3580 ms | 728.61 MiB | 0.941288 | 0.960320 | 相同 / 4/5 |
-
-完整合成 RGB 链路的结果不同：
-
-| 完整链路 | Mean | P90 | 峰值 CUDA | Route MAE | 判定 |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Dense FP16 | 113.778501 ms | 114.537369 ms | 2011.42 MiB | 基线 | 通过 |
-| NF4 + FP16 边界 | 134.313972 ms | 135.126288 ms | 1498.98 MiB | **0.051497** | **未通过** |
-
-NF4/FP16 的完整链路峰值显存下降 **25.4768%**，平均延迟增加 **18.0486%**。相机输入、视觉编码器、embedding、语言 hidden/logits、waypoint embedding 和两个输出头的 FP16 dtype 审计都通过，输出也全部有限；但 route MAE `0.0514972694` 超过预先声明的合成 smoke 阈值 `0.05`，因此整条链路的 `accepted` 为 `false`。语言 artifact 验证通过不能覆盖这个失败项。
-
-同批次 BF16 控制组再次通过：dense BF16 mean 为 115.252064 ms，NF4/BF16 mean 为 131.497650 ms，route MAE 为 0.034710694。它用于确认测试链路，原始结果见 [`mixed-control-bf16-full-pipeline.json`](results/rtx3070ti/mixed-fp16-nf4/mixed-control-bf16-full-pipeline.json)。相对标准 dense BF16，NF4/FP16 的 route MAE 为 0.06189461，speed-waypoint MAE 为 0.23989258。
-
-所以，**默认推荐仍是原 BF16 边界 + NF4**。FP16 边界档只用于显式选择的显存实验，不代表真实驾驶精度，也没有经过带标签数据、Bench2Drive 或 CARLA 闭环验证。完整记录见[验证文档](docs/validation-rtx3070ti.md#fp16-边界--qwen-168-层-nf4实验补充)与 [`evaluation-summary.json`](results/rtx3070ti/mixed-fp16-nf4/evaluation-summary.json)。
 
 ## 目录
 
@@ -179,7 +130,7 @@ python quantize_and_benchmark.py \
 
 ## 导出可重复加载的 NF4 artifact
 
-下面的默认命令导出本文已验证的 BF16/NF4 配置；每次新导出仍需执行后面的重载验证和完整链路 smoke test：
+默认只导出已经通过本轮 smoke test 的 NF4：
 
 ```bash
 python export_quantized_artifacts.py \
@@ -234,66 +185,9 @@ python smoke_test_full_pipeline.py \
 
 若要调查 INT8，可在导出命令加 `--formats nf4 int8`。当前已验证软件栈中的 INT8 重载结果未通过数值门槛，所以它只是实验选项；不要把“能够保存和运行”当作精度通过。
 
-## 运行 FP16 边界实验
-
-现有命令不加 `--boundary-dtype` 时仍默认为 `bf16`，原 BF16/NF4 artifact 名称和加载方式保持兼容。只有明确实验 FP16 边界时才加入下面的参数。
-
-先分别运行 dense FP16 和 NF4/FP16 的 seq560 基准：
-
-```bash
-python quantize_and_benchmark.py \
-  --mode run --quantization none \
-  --boundary-dtype fp16 \
-  --model-dir models/simlingo \
-  --sequence-length 560 --warmup 10 --iterations 50 \
-  --result results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-seq560.json
-
-python quantize_and_benchmark.py \
-  --mode run --quantization nf4 \
-  --boundary-dtype fp16 \
-  --model-dir models/simlingo \
-  --sequence-length 560 --warmup 10 --iterations 50 \
-  --result results/rtx3070ti/mixed-fp16-nf4/mixed-nf4-fp16-seq560.json
-```
-
-导出、从磁盘重载验证，再运行完整合成图像链路：
-
-```bash
-python export_quantized_artifacts.py \
-  --model-dir models/simlingo \
-  --output-dir artifacts/simlingo-3070-fp16-nf4 \
-  --boundary-dtype fp16
-
-python validate_artifacts.py \
-  --artifact-dir artifacts/simlingo-3070-fp16-nf4 \
-  --boundary-dtype fp16 \
-  --warmup 10 --iterations 50 \
-  --result results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-artifact-validation.json
-
-python load_quantized_model.py \
-  --artifact-dir artifacts/simlingo-3070-fp16-nf4 \
-  --model-dir models/simlingo \
-  --quantization nf4 \
-  --boundary-dtype fp16
-
-python smoke_test_full_pipeline.py \
-  --artifact-dir artifacts/simlingo-3070-fp16-nf4 \
-  --model-dir models/simlingo \
-  --boundary-dtype fp16 \
-  --result results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-full-pipeline.json
-```
-
-本轮已经落盘的原始记录位于 [`results/rtx3070ti/mixed-fp16-nf4/`](results/rtx3070ti/mixed-fp16-nf4/)：
-
-- [`artifact-manifest.json`](results/rtx3070ti/mixed-fp16-nf4/artifact-manifest.json)：FP16 artifact 文件名、dtype policy 与字节数；
-- [`mixed-fp16-nf4-artifact-validation.json`](results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-artifact-validation.json)：持久化语言模型验证；
-- [`mixed-fp16-nf4-full-pipeline.json`](results/rtx3070ti/mixed-fp16-nf4/mixed-fp16-nf4-full-pipeline.json)：FP16/NF4 完整链路及未通过项；
-- [`mixed-control-bf16-full-pipeline.json`](results/rtx3070ti/mixed-fp16-nf4/mixed-control-bf16-full-pipeline.json)：同批次 BF16/NF4 控制组；
-- [`evaluation-summary.json`](results/rtx3070ti/mixed-fp16-nf4/evaluation-summary.json)：最终 `experimental_not_default` 决策。
-
 ## 验证边界
 
-- 默认 BF16 边界 + NF4 已通过固定合成提示和固定合成 RGB 图像的整链路 smoke test；FP16 边界 + NF4 的持久化语言 artifact 通过，但完整链路 route MAE 超过预设阈值，因此保持 opt-in。两者都没有用真实驾驶帧计算相对标签的路线 waypoint 误差，也没有运行 Bench2Drive/CARLA Driving Score。
+- NF4 已通过固定合成提示和固定合成 RGB 图像的整链路 smoke test，还没有用真实驾驶帧计算相对标签的路线 waypoint 误差，也没有运行 Bench2Drive/CARLA Driving Score。
 - 量化节省显存但没有在 3070 Ti 上加速。此模型批量为 1、语言骨干较小，反量化和 kernel 启动开销高于 BF16 Tensor Core 的收益。
 - 当前上游自回归生成没有使用 KV cache，每生成一个 token 都重复处理长序列。若目标是降低端到端延迟，下一步应先加入 KV cache，再评估 TensorRT-LLM 或拆分后的视觉 TensorRT。
 - bitsandbytes artifact 运行时仍依赖 CUDA、PyTorch、Transformers 和 bitsandbytes；它不是独立 ONNX 或 TensorRT 文件。
