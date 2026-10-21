@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "profile": "Qwen transformer NF4 with FP16 vision/input/output/head boundaries",
+  "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+  "accepted_for_default": false,
+  "decision": "experimental_not_default",
+  "decision_reasons": [
+    "The complete-pipeline route mean absolute difference was 0.0514972694, above the predeclared 0.0500000000 smoke threshold.",
+    "The persisted language artifact and every runtime dtype audit passed, so the profile remains useful as an opt-in memory-saving experiment."
+  ],
+  "language_benchmark_seq560": {
+    "bf16_dense": {
+      "mean_ms": 40.0197,
+      "p90_ms": 40.3828,
+      "peak_cuda_mib": 1997.49
+    },
+    "fp16_dense": {
+      "mean_ms": 36.8185,
+      "p90_ms": 37.0839,
+      "peak_cuda_mib": 1997.49,
+      "mean_latency_change_vs_bf16_percent": -7.9991
+    },
+    "nf4_bf16_boundaries": {
+      "mean_ms": 46.8083,
+      "p90_ms": 47.207,
+      "peak_cuda_mib": 1483.96
+    },
+    "nf4_fp16_boundaries": {
+      "mean_ms": 48.0029,
+      "p90_ms": 48.3,
+      "peak_cuda_mib": 1483.96,
+      "mean_latency_change_vs_fp16_dense_percent": 30.3771,
+      "mean_latency_change_vs_nf4_bf16_boundaries_percent": 2.5521,
+      "peak_cuda_saving_vs_fp16_dense_percent": 25.7088,
+      "qwen_nf4_linear_layers": 168,
+      "nf4_compute_dtype": "float16"
+    }
+  },
+  "persisted_artifact": {
+    "dense_fp16_payload_bytes": 1879283962,
+    "nf4_fp16_payload_bytes": 1348533294,
+    "payload_saving_percent": 28.2422,
+    "validation_accepted": true,
+    "hidden_cosine": 0.9412884712,
+    "logits_cosine": 0.9603204727,
+    "top1_match": true,
+    "top5_overlap": 4
+  },
+  "backward_compatibility": {
+    "legacy_schema_1_0_bf16_artifact_reload_accepted": true,
+    "legacy_full_pipeline_accepted": true
+  },
+  "complete_pipeline": {
+    "fp16_dense": {
+      "mean_ms": 113.7785011292,
+      "p90_ms": 114.5373687744,
+      "peak_cuda_mib": 2011.421875
+    },
+    "nf4_fp16_boundaries": {
+      "mean_ms": 134.3139724731,
+      "p90_ms": 135.1262878418,
+      "peak_cuda_mib": 1498.9765625,
+      "mean_latency_change_percent": 18.0486,
+      "peak_cuda_saving_percent": 25.4768,
+      "all_runtime_floating_boundaries_float16": true,
+      "all_outputs_finite": true,
+      "route": {
+        "mean_abs": 0.0514972694,
+        "rmse": 0.060864564,
+        "cosine": 0.9999747872
+      },
+      "speed_waypoints": {
+        "mean_abs": 0.2418456972,
+        "rmse": 0.3440255821,
+        "cosine": 0.9975313544
+      },
+      "accepted": false
+    }
+  },
+  "cross_precision_complete_pipeline": {
+    "fp16_dense_vs_bf16_dense": {
+      "route_mean_abs": 0.0142761227,
+      "route_cosine": 0.9999983907,
+      "speed_waypoints_mean_abs": 0.0079101566,
+      "speed_waypoints_cosine": 0.9999828935
+    },
+    "nf4_fp16_boundaries_vs_nf4_bf16_boundaries": {
+      "route_mean_abs": 0.0279163364,
+      "route_cosine": 0.9999968409,
+      "speed_waypoints_mean_abs": 0.0762329102,
+      "speed_waypoints_cosine": 0.9995809197
+    },
+    "nf4_fp16_boundaries_vs_bf16_dense": {
+      "route_mean_abs": 0.06189461,
+      "route_rmse": 0.07351735,
+      "route_cosine": 0.99996905,
+      "speed_waypoints_mean_abs": 0.23989258,
+      "speed_waypoints_rmse": 0.34426501,
+      "speed_waypoints_cosine": 0.99771945
+    }
+  },
+  "limitations": [
+    "The complete-pipeline input is deterministic synthetic RGB, not a labeled driving sample.",
+    "The measurements cover one RTX 3070 Ti Laptop GPU and do not establish CARLA or Bench2Drive accuracy."
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "created_at_utc": "2026-10-21T04:32:47.313032+00:00",
+  "status": "success",
+  "run": {
+    "mode": "run",
+    "upstream_source": "/home/robot/project/simlingo-quant-20261021/quant-project-final/vendor/simlingo",
+    "upstream_revision": "743b243afd6cf5ff51b9fa1f8cac86f22d569684",
+    "config": "/home/robot/project/simlingo-quant-20261021/models/hydra/config.yaml",
+    "checkpoint": "/home/robot/project/simlingo-quant-20261021/models/pytorch_model.pt",
+    "quantization": "none",
+    "boundary_dtype": "bf16",
+    "device": "cuda:0",
+    "internvl_revision": "0d75ccd166b1d0b79446ae6c5d1a4a667f1e6187",
+    "batch_size": 1,
+    "sequence_length": 560,
+    "warmup": 10,
+    "iterations": 50
+  },
+  "environment": {
+    "python": "3.8.20",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.17",
+    "packages": {
+      "torch": "2.2.0+cu121",
+      "torchvision": "0.17.0+cu121",
+      "transformers": "4.46.3",
+      "peft": "0.13.2",
+      "bitsandbytes": "0.44.1",
+      "hydra-core": "1.3.2",
+      "omegaconf": "2.3.0",
+      "pytorch-lightning": "2.4.0"
+    },
+    "nvidia_smi": {
+      "name": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+      "driver": "580.178.04",
+      "memory_total_mb": "8192"
+    },
+    "torch": "2.2.0+cu121",
+    "torch_cuda_runtime": "12.1",
+    "cuda_available": true,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+      "capability": [
+        8,
+        6
+      ],
+      "total_memory_mb": 7840.06
+    }
+  },
+  "source_integrity": {
+    "verified": true,
+    "source_commit": "743b243afd6cf5ff51b9fa1f8cac86f22d569684",
+    "license": "Apache-2.0",
+    "files_checked": 9,
+    "manifest": "/home/robot/project/simlingo-quant-20261021/quant-project-final/vendor-manifest.json"
+  },
+  "model": {
+    "configured_variant": "OpenGVLab/InternVL2-1B",
+    "internvl_local_snapshot": "/home/robot/project/simlingo-quant-20261021/pretrained/InternVL2-1B",
+    "internvl_revision": "0d75ccd166b1d0b79446ae6c5d1a4a667f1e6187",
+    "transformers_offline": true,
+    "checkpoint_bytes": 2569679322,
+    "state_tensor_count": 992,
+    "instantiate_seconds": 2.574,
+    "checkpoint_load_seconds": 0.663,
+    "missing_keys": [],
+    "unexpected_keys": [],
+    "boundary_dtype": "bfloat16",
+    "before_merge_and_quantization": {
+      "parameters": 957195520,
+      "parameter_storage_mb": 1825.71,
+      "dtype_parameter_counts": {
+        "bfloat16": 957195520
+      }
+    },
+    "after_quantization": {
+      "parameters": 939599104,
+      "parameter_storage_mb": 1792.14,
+      "dtype_parameter_counts": {
+        "bfloat16": 939599104
+      }
+    },
+    "dtype_policy": {
+      "boundary_dtype": "bfloat16",
+      "vision_encoder": "bfloat16",
+      "driving_heads": "bfloat16",
+      "language_transformer_linears": "none",
+      "language_embeddings_and_lm_head": "bfloat16"
+    }
+  },
+  "quantization": {
+    "backend": "pytorch",
+    "mode": "none",
+    "scope": "language_model.model transformer linear layers",
+    "linear_layers_replaced": 0,
+    "skipped_output_layers": [],
+    "lora_merged": true,
+    "lora": {
+      "merged": true,
+      "seconds": 0.905,
+      "lora_module_count_before": 1512,
+      "lora_module_count_after": 0
+    },
+    "move_to_cuda_and_quantize_seconds": 0.529,
+    "language_bnb_layers": 0,
+    "vision_bnb_layers": 0,
+    "driving_head_bnb_layers": 0,
+    "waypoint_encoder_bnb_layers": 0,
+    "bnb_compute_dtypes": [],
+    "preserved_component_dtypes": {
+      "vision_encoder": [
+        "bfloat16"
+      ],
+      "driving_adaptor": [
+        "bfloat16"
+      ],
+      "waypoint_encoder": [
+        "bfloat16"
+      ],
+      "language_embeddings": [
+        "bfloat16"
+      ],
+      "language_lm_head": [
+        "bfloat16"
+      ],
+      "language_non_quantized_parameters": [
+        "bfloat16"
+      ]
+    }
+  },
+  "benchmark": {
+    "scope": "language model forward",
+    "note": "Synthetic token embeddings; excludes vision preprocessing and CARLA loop",
+    "batch_size": 1,
+    "sequence_length": 560,
+    "warmup": 10,
+    "iterations": 50,
+    "preflight_hidden_finite": true,
+    "preflight_logits_finite": true,
+    "preflight_hidden_dtype": "bfloat16",
+    "preflight_logits_dtype": "bfloat16",
+    "latency_ms": {
+      "mean": 40.0197,
+      "p50": 39.9433,
+      "p90": 40.3828,
+      "min": 39.6781,
+      "max": 40.6028
+    },
+    "throughput_tokens_per_second": 13993.102,
+    "cuda_memory_allocated_mb": 1812.52,
+    "cuda_memory_reserved_mb": 2146.0,
+    "peak_cuda_memory_mb": 1997.49
+  }
+}

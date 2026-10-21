@@ -18,6 +18,7 @@
         "config": {"type": "string"},
         "checkpoint": {"type": "string"},
         "quantization": {"enum": ["none", "int8", "nf4"]},
+        "boundary_dtype": {"enum": ["bf16", "fp16"]},
         "device": {"type": "string"}
       },
       "additionalProperties": true
@@ -37,7 +38,8 @@
         "lora_merged": {"type": "boolean"},
         "linear_layers_replaced": {"type": "integer", "minimum": 0},
         "vision_bnb_layers": {"const": 0},
-        "driving_head_bnb_layers": {"const": 0}
+        "driving_head_bnb_layers": {"const": 0},
+        "waypoint_encoder_bnb_layers": {"const": 0}
       },
       "additionalProperties": true
     },

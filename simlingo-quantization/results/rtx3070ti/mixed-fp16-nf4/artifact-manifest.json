@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.1",
+  "created_at_utc": "2026-10-21T04:46:28.404581+00:00",
+  "source": {
+    "repository": "https://github.com/RenzKa/simlingo",
+    "commit": "743b243afd6cf5ff51b9fa1f8cac86f22d569684",
+    "checkpoint_sha256": "ec8943723d266ee9f5f56f45d153a163b22616960bfccb741965ea5daa700d28",
+    "internvl_revision": "0d75ccd166b1d0b79446ae6c5d1a4a667f1e6187"
+  },
+  "environment": {
+    "python": "3.8.20",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.17",
+    "packages": {
+      "torch": "2.2.0+cu121",
+      "torchvision": "0.17.0+cu121",
+      "transformers": "4.46.3",
+      "peft": "0.13.2",
+      "bitsandbytes": "0.44.1",
+      "hydra-core": "1.3.2",
+      "omegaconf": "2.3.0",
+      "pytorch-lightning": "2.4.0"
+    },
+    "nvidia_smi": {
+      "name": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+      "driver": "580.178.04",
+      "memory_total_mb": "8192"
+    },
+    "torch": "2.2.0+cu121",
+    "torch_cuda_runtime": "12.1",
+    "cuda_available": true,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+      "capability": [
+        8,
+        6
+      ],
+      "total_memory_mb": 7840.06
+    }
+  },
+  "model": {
+    "configured_variant": "OpenGVLab/InternVL2-1B",
+    "internvl_local_snapshot": "/home/robot/project/simlingo-quant-20261021/pretrained/InternVL2-1B",
+    "internvl_revision": "0d75ccd166b1d0b79446ae6c5d1a4a667f1e6187",
+    "transformers_offline": true,
+    "checkpoint_bytes": 2569679322,
+    "state_tensor_count": 992,
+    "instantiate_seconds": 3.251,
+    "checkpoint_load_seconds": 0.459,
+    "missing_keys": [],
+    "unexpected_keys": [],
+    "boundary_dtype": "float16"
+  },
+  "lora": {
+    "merged": true,
+    "seconds": 0.903,
+    "lora_module_count_before": 1512,
+    "lora_module_count_after": 0
+  },
+  "dtype_policy": {
+    "boundary_dtype": "float16",
+    "vision_encoder_and_driving_heads": "float16",
+    "language_embeddings_and_lm_head": "float16",
+    "language_transformer_linears": [
+      "nf4"
+    ]
+  },
+  "artifacts": {
+    "non_language_fp16": {
+      "path": "non_language_fp16.safetensors",
+      "bytes": 619923040
+    },
+    "llm_merged_fp16": {
+      "path": "llm_merged_fp16",
+      "bytes": 1259360922
+    },
+    "llm_bnb_nf4_fp16": {
+      "path": "llm_bnb_nf4_fp16",
+      "bytes": 728610254,
+      "seconds": 2.141,
+      "peak_cuda_memory_bytes": 748082688,
+      "preflight_finite": true,
+      "input_embedding_dtype": "float16",
+      "lm_head_dtype": "float16",
+      "bnb_layer_count": 168,
+      "bnb_compute_dtypes": [
+        "float16"
+      ],
+      "validation_status": "requires validate_artifacts.py"
+    }
+  },
+  "notes": [
+    "Every exported precision profile must pass validate_artifacts.py and the complete-pipeline smoke test before deployment.",
+    "INT8 export is experimental and must pass validate_artifacts.py before use.",
+    "No ONNX or TensorRT engine is produced by this bitsandbytes workflow."
+  ],
+  "total_seconds": 12.547
+}

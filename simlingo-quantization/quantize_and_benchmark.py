@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Load, merge and quantize SimLingo without importing CARLA.
 
-The script keeps the vision encoder, output head and driving heads in BF16.  It
-replaces only transformer ``nn.Linear`` modules below
-``model.language_model.model`` with bitsandbytes INT8 or NF4 modules.
+The script keeps the vision encoder, input/output boundaries and driving heads
+in the selected floating-point boundary dtype. It replaces only transformer
+``nn.Linear`` modules below ``model.language_model.model`` with bitsandbytes
+INT8 or NF4 modules.
 """
 
 import argparse
@@ -38,6 +39,36 @@ SPECIAL_TOKENS = [
 VENDORED_SOURCE = Path(__file__).resolve().parent / "vendor" / "simlingo"
 VENDORED_COMMIT = "743b243afd6cf5ff51b9fa1f8cac86f22d569684"
 INTERNVL_REVISION = "0d75ccd166b1d0b79446ae6c5d1a4a667f1e6187"
+BOUNDARY_DTYPE_CHOICES = ("bf16", "fp16")
+EXPECTED_QWEN_LINEAR_LAYERS = 168
+
+
+def boundary_torch_dtype(torch: Any, name: str) -> Any:
+    if name == "bf16":
+        return torch.bfloat16
+    if name == "fp16":
+        return torch.float16
+    raise ValueError("Unsupported boundary dtype: %s" % name)
+
+
+def boundary_dtype_name(name: str) -> str:
+    if name == "bf16":
+        return "bfloat16"
+    if name == "fp16":
+        return "float16"
+    raise ValueError("Unsupported boundary dtype: %s" % name)
+
+
+def artifact_layout(boundary_dtype: str) -> Dict[str, str]:
+    if boundary_dtype not in BOUNDARY_DTYPE_CHOICES:
+        raise ValueError("Unsupported boundary dtype: %s" % boundary_dtype)
+    quantized_suffix = "" if boundary_dtype == "bf16" else "_fp16"
+    return {
+        "non_language": "non_language_%s.safetensors" % boundary_dtype,
+        "baseline_llm": "llm_merged_%s" % boundary_dtype,
+        "nf4_llm": "llm_bnb_nf4%s" % quantized_suffix,
+        "int8_llm": "llm_bnb_int8%s" % quantized_suffix,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +88,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--hf-cache-dir", type=Path, default=None)
     parser.add_argument("--quantization", choices=("none", "int8", "nf4"), default="nf4")
+    parser.add_argument(
+        "--boundary-dtype",
+        choices=BOUNDARY_DTYPE_CHOICES,
+        default="bf16",
+        help="Floating dtype for vision/input/output/head modules around the quantized Qwen backbone.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--sequence-length", type=int, default=128)
@@ -260,6 +297,7 @@ def base_result(args: argparse.Namespace, paths: Mapping[str, Path]) -> Dict[str
             "config": str(paths["config"]),
             "checkpoint": str(paths["checkpoint"]),
             "quantization": args.quantization,
+            "boundary_dtype": args.boundary_dtype,
             "device": args.device,
             "internvl_revision": INTERNVL_REVISION,
             "batch_size": args.batch_size,
@@ -385,7 +423,7 @@ def load_simlingo(args: argparse.Namespace, paths: Mapping[str, Path]) -> Tuple[
     previous_dtype = torch.get_default_dtype()
     started = time.perf_counter()
     try:
-        torch.set_default_dtype(torch.bfloat16)
+        torch.set_default_dtype(boundary_torch_dtype(torch, args.boundary_dtype))
         model = hydra.utils.instantiate(
             cfg.model,
             cfg_data_module=cfg.data_module,
@@ -407,7 +445,7 @@ def load_simlingo(args: argparse.Namespace, paths: Mapping[str, Path]) -> Tuple[
 
     model.eval()
     model.requires_grad_(False)
-    model.to(dtype=torch.bfloat16)
+    model.to(dtype=boundary_torch_dtype(torch, args.boundary_dtype))
     report = {
         "configured_variant": configured_variant,
         "internvl_local_snapshot": internvl_path,
@@ -419,6 +457,7 @@ def load_simlingo(args: argparse.Namespace, paths: Mapping[str, Path]) -> Tuple[
         "checkpoint_load_seconds": round(load_seconds, 3),
         "missing_keys": list(incompatible.missing_keys),
         "unexpected_keys": list(incompatible.unexpected_keys),
+        "boundary_dtype": boundary_dtype_name(args.boundary_dtype),
     }
     return model, report
 
@@ -488,6 +527,7 @@ def _make_bnb_linear(
     mode: str,
     int8_threshold: float,
     double_quant: bool,
+    compute_dtype: Any,
 ) -> Any:
     has_bias = source.bias is not None
     if mode == "int8":
@@ -508,7 +548,7 @@ def _make_bnb_linear(
             source.in_features,
             source.out_features,
             bias=has_bias,
-            compute_dtype=torch.bfloat16,
+            compute_dtype=compute_dtype,
             compress_statistics=double_quant,
             quant_type="nf4",
             quant_storage=torch.uint8,
@@ -564,6 +604,7 @@ def quantize_language_linears(model: Any, args: argparse.Namespace) -> Dict[str,
                     args.quantization,
                     args.int8_threshold,
                     not args.no_double_quant,
+                    boundary_torch_dtype(torch, args.boundary_dtype),
                 )
                 setattr(parent, child_name, replacement)
                 replaced.append(path)
@@ -582,7 +623,9 @@ def quantize_language_linears(model: Any, args: argparse.Namespace) -> Dict[str,
         "linear_layers_replaced": len(replaced),
         "replaced_layer_names": replaced,
         "skipped_output_layers": skipped,
-        "lm_head_policy": "BF16; SimLingo greedy_sample reads lm_head.weight via F.linear",
+        "lm_head_policy": "%s; SimLingo greedy_sample reads lm_head.weight via F.linear"
+        % boundary_dtype_name(args.boundary_dtype),
+        "compute_dtype": boundary_dtype_name(args.boundary_dtype),
         "nf4_double_quant": not args.no_double_quant if args.quantization == "nf4" else None,
         "int8_threshold": args.int8_threshold if args.quantization == "int8" else None,
         "replacement_seconds": round(time.perf_counter() - started, 3),
@@ -596,6 +639,20 @@ def count_bnb_layers(module: Any) -> int:
         return 0
     classes = (bnb.nn.Linear8bitLt, bnb.nn.Linear4bit)
     return sum(1 for child in module.modules() if isinstance(child, classes))
+
+
+def bnb_compute_dtypes(module: Any) -> List[str]:
+    try:
+        import bitsandbytes as bnb
+    except ImportError:
+        return []
+    return sorted(
+        {
+            str(child.compute_dtype).replace("torch.", "")
+            for child in module.modules()
+            if isinstance(child, bnb.nn.Linear4bit)
+        }
+    )
 
 
 def floating_parameter_dtypes(module: Any) -> List[str]:
@@ -636,7 +693,9 @@ def benchmark_language_model(model: Any, args: argparse.Namespace) -> Dict[str, 
         device=device,
     )
     attention_mask = torch.ones_like(token_ids, dtype=torch.long)
-    input_embeds = embeddings(token_ids).to(dtype=torch.bfloat16)
+    input_embeds = embeddings(token_ids).to(
+        dtype=boundary_torch_dtype(torch, args.boundary_dtype)
+    )
 
     def invoke() -> Any:
         output = language(
@@ -655,6 +714,14 @@ def benchmark_language_model(model: Any, args: argparse.Namespace) -> Dict[str, 
         preflight = invoke()
         hidden_finite = bool(torch.isfinite(preflight.hidden_states[-1][:, -1]).all().item())
         logits_finite = bool(torch.isfinite(preflight[0][:, -1]).all().item())
+        hidden_dtype = str(preflight.hidden_states[-1].dtype).replace("torch.", "")
+        logits_dtype = str(preflight[0].dtype).replace("torch.", "")
+        expected_dtype = boundary_dtype_name(args.boundary_dtype)
+        if hidden_dtype != expected_dtype or logits_dtype != expected_dtype:
+            raise AssertionError(
+                "Language outputs must be %s, found hidden=%s logits=%s"
+                % (expected_dtype, hidden_dtype, logits_dtype)
+            )
         del preflight
         if not hidden_finite or not logits_finite:
             raise RuntimeError(
@@ -681,6 +748,8 @@ def benchmark_language_model(model: Any, args: argparse.Namespace) -> Dict[str, 
         "iterations": args.iterations,
         "preflight_hidden_finite": hidden_finite,
         "preflight_logits_finite": logits_finite,
+        "preflight_hidden_dtype": hidden_dtype,
+        "preflight_logits_dtype": logits_dtype,
         "latency_ms": {
             "mean": round(mean_ms, 4),
             "p50": round(percentile(timings, 0.50), 4),
@@ -721,10 +790,25 @@ def run_quantization(args: argparse.Namespace, paths: Mapping[str, Path], result
     quant_report["language_bnb_layers"] = count_bnb_layers(model.language_model.model)
     quant_report["vision_bnb_layers"] = count_bnb_layers(model.vision_model)
     quant_report["driving_head_bnb_layers"] = count_bnb_layers(model.adaptors.driving)
-    if quant_report["vision_bnb_layers"] != 0 or quant_report["driving_head_bnb_layers"] != 0:
+    quant_report["waypoint_encoder_bnb_layers"] = count_bnb_layers(model.wp_encoder)
+    if (
+        quant_report["vision_bnb_layers"] != 0
+        or quant_report["driving_head_bnb_layers"] != 0
+        or quant_report["waypoint_encoder_bnb_layers"] != 0
+    ):
         raise AssertionError("Quantized modules escaped the language-model scope")
-    if args.quantization != "none" and quant_report["language_bnb_layers"] == 0:
-        raise AssertionError("No active bitsandbytes layers found after moving to CUDA")
+    if args.quantization != "none":
+        if quant_report["linear_layers_replaced"] != EXPECTED_QWEN_LINEAR_LAYERS:
+            raise AssertionError(
+                "Expected %d Qwen Linear replacements, found %d"
+                % (EXPECTED_QWEN_LINEAR_LAYERS, quant_report["linear_layers_replaced"])
+            )
+        if quant_report["language_bnb_layers"] != EXPECTED_QWEN_LINEAR_LAYERS:
+            raise AssertionError(
+                "Expected %d active language bitsandbytes layers, found %d"
+                % (EXPECTED_QWEN_LINEAR_LAYERS, quant_report["language_bnb_layers"])
+            )
+    quant_report["bnb_compute_dtypes"] = bnb_compute_dtypes(model.language_model.model)
 
     component_dtypes = {
         "vision_encoder": floating_parameter_dtypes(model.vision_model),
@@ -736,18 +820,30 @@ def run_quantization(args: argparse.Namespace, paths: Mapping[str, Path], result
         "language_lm_head": [
             str(model.adaptors.language.lm_head.weight.dtype).replace("torch.", "")
         ],
+        "language_non_quantized_parameters": floating_parameter_dtypes(
+            model.language_model.model
+        ),
     }
+    expected_dtype = boundary_dtype_name(args.boundary_dtype)
     for component, dtypes in component_dtypes.items():
-        if dtypes != ["bfloat16"]:
-            raise AssertionError("%s must remain BF16, found %s" % (component, dtypes))
+        if dtypes != [expected_dtype]:
+            raise AssertionError(
+                "%s must remain %s, found %s" % (component, expected_dtype, dtypes)
+            )
+    if args.quantization == "nf4" and quant_report["bnb_compute_dtypes"] != [expected_dtype]:
+        raise AssertionError(
+            "NF4 compute dtype must be %s, found %s"
+            % (expected_dtype, quant_report["bnb_compute_dtypes"])
+        )
     quant_report["preserved_component_dtypes"] = component_dtypes
 
     result["model"]["after_quantization"] = unique_parameter_report(model)
     result["model"]["dtype_policy"] = {
-        "vision_encoder": "bfloat16",
-        "driving_heads": "bfloat16",
+        "boundary_dtype": expected_dtype,
+        "vision_encoder": expected_dtype,
+        "driving_heads": expected_dtype,
         "language_transformer_linears": args.quantization,
-        "language_embeddings_and_lm_head": "bfloat16",
+        "language_embeddings_and_lm_head": expected_dtype,
     }
     result["quantization"] = quant_report
     result["benchmark"] = benchmark_language_model(model, args)
@@ -769,7 +865,7 @@ def main() -> int:
                 "load InternVL2-1B only from the pinned local revision",
                 "merge PEFT LoRA into the Qwen language model",
                 "replace only Qwen transformer Linear layers",
-                "move the mixed BF16/quantized model to CUDA",
+                "move the mixed boundary-dtype/quantized model to CUDA",
                 "benchmark a language-model forward pass and write JSON",
             ],
             "inputs_exist": {name: path.exists() for name, path in paths.items() if name != "result"},
