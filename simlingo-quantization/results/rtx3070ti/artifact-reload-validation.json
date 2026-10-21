@@ -1,0 +1,131 @@
+{
+  "schema_version": "1.0",
+  "created_at_utc": "2026-10-21T03:57:04.246903+00:00",
+  "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+  "torch": "2.2.0+cu121",
+  "cuda": "12.1",
+  "sequence_length": 557,
+  "warmup": 10,
+  "iterations": 50,
+  "scope": "persisted Qwen2 decoder prefill plus one final lm_head projection",
+  "acceptance": {
+    "finite": true,
+    "hidden_cosine_min": 0.9,
+    "logits_cosine_min": 0.9,
+    "top1_match": true,
+    "note": "Synthetic-prompt smoke threshold; not a driving-accuracy threshold."
+  },
+  "models": {
+    "bf16": {
+      "artifact": "/home/robot/project/simlingo-quant-20261021/artifacts/llm_merged_bf16",
+      "artifact_bytes": 1259361211,
+      "load_seconds": 2.3149835099757183,
+      "finite": true,
+      "loaded_in_8bit": false,
+      "loaded_in_4bit": false,
+      "cuda_allocated_mib": 1219.5537109375,
+      "cuda_peak_mib": 1239.005859375,
+      "latency_ms": {
+        "mean": 24.965991134643556,
+        "p50": 24.94393539428711,
+        "p90": 25.04193572998047,
+        "min": 24.856576919555664,
+        "max": 25.32352066040039
+      },
+      "top1_token_id": 151645,
+      "top5_token_ids": [
+        151645,
+        220,
+        330,
+        861,
+        576
+      ],
+      "comparison_to_bf16": null,
+      "accepted": true
+    },
+    "int8": {
+      "artifact": "/home/robot/project/simlingo-quant-20261021/artifacts/llm_bnb_int8",
+      "artifact_bytes": 902786345,
+      "load_seconds": 0.8671302960137837,
+      "finite": true,
+      "loaded_in_8bit": true,
+      "loaded_in_4bit": false,
+      "cuda_allocated_mib": 894.9267578125,
+      "cuda_peak_mib": 926.86669921875,
+      "latency_ms": {
+        "mean": 157.9114562988281,
+        "p50": 157.81938934326172,
+        "p90": 158.57654113769533,
+        "min": 157.0478057861328,
+        "max": 159.09750366210938
+      },
+      "top1_token_id": 145770,
+      "top5_token_ids": [
+        145770,
+        19141,
+        44561,
+        84940,
+        52388
+      ],
+      "comparison_to_bf16": {
+        "hidden": {
+          "mean_abs": 6.379605770111084,
+          "max_abs": 68.90625,
+          "rmse": 8.42700481414795,
+          "cosine": 0.03032652661204338
+        },
+        "logits": {
+          "mean_abs": 5.34547233581543,
+          "max_abs": 22.0625,
+          "rmse": 6.196885108947754,
+          "cosine": -0.48551830649375916
+        },
+        "top1_match": false,
+        "top5_overlap": 0
+      },
+      "accepted": false
+    },
+    "nf4": {
+      "artifact": "/home/robot/project/simlingo-quant-20261021/artifacts/llm_bnb_nf4",
+      "artifact_bytes": 728610522,
+      "load_seconds": 0.5672883770021144,
+      "finite": true,
+      "loaded_in_8bit": false,
+      "loaded_in_4bit": true,
+      "cuda_allocated_mib": 706.0146484375,
+      "cuda_peak_mib": 728.61181640625,
+      "latency_ms": {
+        "mean": 44.73217964172363,
+        "p50": 44.723201751708984,
+        "p90": 44.9464153289795,
+        "min": 44.38323211669922,
+        "max": 45.14303970336914
+      },
+      "top1_token_id": 151645,
+      "top5_token_ids": [
+        151645,
+        220,
+        861,
+        256,
+        330
+      ],
+      "comparison_to_bf16": {
+        "hidden": {
+          "mean_abs": 1.0086512565612793,
+          "max_abs": 7.1875,
+          "rmse": 1.338819146156311,
+          "cosine": 0.9448228478431702
+        },
+        "logits": {
+          "mean_abs": 0.4591709077358246,
+          "max_abs": 2.4375,
+          "rmse": 0.571524441242218,
+          "cosine": 0.9634160995483398
+        },
+        "top1_match": true,
+        "top5_overlap": 4
+      },
+      "accepted": true
+    }
+  }
+}

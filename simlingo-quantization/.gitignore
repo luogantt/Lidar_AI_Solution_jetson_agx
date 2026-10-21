@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+/models/
+/artifacts/
+/results/*.json
+!/results/rtx3070ti/
+!/results/rtx3070ti/*.json
+*.onnx
+*.engine
+*.plan
+*.pt
+*.pth
+*.ckpt
+*.safetensors

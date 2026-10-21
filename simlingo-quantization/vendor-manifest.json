@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "repository": "https://github.com/RenzKa/simlingo",
+    "commit": "743b243afd6cf5ff51b9fa1f8cac86f22d569684",
+    "license": "Apache-2.0"
+  },
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 11581,
+      "sha256": "77c8fea057f22e07f111c75f2e578b94323607bd693f10e52599ab491c92c3ca"
+    },
+    {
+      "path": "simlingo_training/models/adaptors/adaptors.py",
+      "bytes": 14942,
+      "sha256": "3573882851c111d4d6ac2a42834704552d25bf1e4c01ff768220a12e7e4ed5dd"
+    },
+    {
+      "path": "simlingo_training/models/driving.py",
+      "bytes": 36115,
+      "sha256": "b4d0602ae58ae0c1f0c8717834c7b0a02140678d82785c7a8f062a8d3669ab20"
+    },
+    {
+      "path": "simlingo_training/models/encoder/internvl2_model.py",
+      "bytes": 7810,
+      "sha256": "9c78bf85067c6bd76a72a8475631d7c777f5bae859a5a00613e947c2ed90b342"
+    },
+    {
+      "path": "simlingo_training/models/encoder/vlm.py",
+      "bytes": 1539,
+      "sha256": "2283874cd50bd8ba124094d226c74de9fc08d14583aaef9417c04b44c1308f71"
+    },
+    {
+      "path": "simlingo_training/models/language_model/llm.py",
+      "bytes": 12056,
+      "sha256": "59973ed6fae0cea079c3f2b2f75ec9c8e1fe280b1f76517d1e840da91dc079b3"
+    },
+    {
+      "path": "simlingo_training/models/utils.py",
+      "bytes": 1668,
+      "sha256": "c7bf0ba2b892e6544fd26327205281e9e793cdc3efdfef62aa5245d48c4a60a8"
+    },
+    {
+      "path": "simlingo_training/utils/custom_types.py",
+      "bytes": 2404,
+      "sha256": "0e4640d3b4977d4ae796c8c3e1553b2004e3bfe648458f496eeb8ccf5735d08e"
+    },
+    {
+      "path": "simlingo_training/utils/internvl2_utils.py",
+      "bytes": 13433,
+      "sha256": "8be021c8f5e8f1528c87c763d90deb38f7fa1934e6434dedb23379fe340f20f8"
+    }
+  ]
+}

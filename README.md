@@ -1,18 +1,20 @@
-# BEVFusion 与 BEVFormer TensorRT 推理项目
+# Robot_infer：自动驾驶推理项目
 
-这个仓库维护两套面向 NVIDIA GPU 的自动驾驶感知推理实现：
+这个仓库维护三套面向 NVIDIA GPU 的自动驾驶感知与视觉语言驾驶推理实现：
 
 | 项目 | 传感器 | 当前输出 | 部署方式 | 当前实测设备 |
 | --- | --- | --- | --- | --- |
 | [BEVFusion](bevfusion_agx/README.md) | 六路相机 + LiDAR | 解码后的三维检测框和可视化 | C++、CUDA、TensorRT，以及源码构建的稀疏卷积后端 | RTX 3090 |
 | [BEVFormer TensorRT](bevformer-tensorrt/README.md) | 六路相机 | BEV 特征、分类 logits 和三维框编码 | Python、TensorRT，支持 FP32 与混合 INT8/FP16 | RTX 3070 Ti Laptop |
+| [SimLingo 量化](simlingo-quantization/README.md) | 前视相机 + 车速 + 目标点 | Qwen logits smoke、路线与速度 waypoint | PyTorch BF16 与 bitsandbytes NF4，包含持久化导出和重载 | RTX 3070 Ti Laptop |
 
-两个目录可以独立安装和运行。BEVFusion 提供完整多传感器三维检测链路；BEVFormer TensorRT 当前交付固定形状的完整网络到检测头原始输出，尚未加入最终框解码、真实视频时序和 nuScenes mAP/NDS 评估。
+三个目录可以独立安装和运行。BEVFusion 提供完整多传感器三维检测链路；BEVFormer TensorRT 当前交付固定形状的完整网络到检测头原始输出；SimLingo 子项目从官方 PyTorch checkpoint 生成 BF16/NF4 artifact，并重组为完整视觉语言驾驶模型。
 
 ```text
 Robot_infer/
 ├── bevfusion_agx/       # 相机 + LiDAR BEVFusion C++/CUDA 推理
-└── bevformer-tensorrt/  # 相机 BEVFormer TensorRT 构建、推理与验证工具
+├── bevformer-tensorrt/  # 相机 BEVFormer TensorRT 构建、推理与验证工具
+└── simlingo-quantization/ # SimLingo PyTorch/NF4 量化、导出与验证
 ```
 
 ## BEVFusion：相机与 LiDAR 融合推理
@@ -93,6 +95,27 @@ BEVFormer 的计时只覆盖 TensorRT engine 提交到 GPU 完成的设备时间
 
 源码仓库不包含完整 ONNX 权重、TensorRT engine 或 nuScenes 数据。模型资产应按 [模型说明](bevformer-tensorrt/models/README.md) 单独取得，并在目标 GPU 和软件环境上重新构建 engine。
 
+## SimLingo：RTX 3070 PyTorch/NF4 量化
+
+`simlingo-quantization` 使用官方 SimLingo PyTorch checkpoint 和 InternVL2-1B 基础模型，在 CPU 合并 Qwen2 LoRA 后，只量化语言 transformer 内部的 168 个线性层。InternViT、token embeddings、`lm_head`、waypoint encoder 和驾驶输出头保持 BF16。
+
+官方当前没有发布 SimLingo ONNX、TensorRT engine 或量化权重。这个子项目提供固定 revision 下载与 SHA-256 校验、最小上游源码快照、BF16/NF4/实验性 INT8 基准、持久化 artifact 导出、从磁盘重载对照，以及将拆分权重重组为完整 `DrivingModel` 的加载器。
+
+2026-10-21 在 RTX 3070 Ti Laptop 8 GB 上完成真实模型与最终 NF4 artifact 验证：
+
+| 合成 RGB 整链路：InternViT → Qwen → 驾驶头 | 平均延迟 | P90 | 峰值 CUDA 显存 | 状态 |
+| --- | ---: | ---: | ---: | --- |
+| BF16 | 114.35 ms | 114.93 ms | 2011.42 MiB | 路线与速度 waypoint 全部有限 |
+| NF4 | 133.68 ms | 134.37 ms | 1498.98 MiB | 同形状、全部有限 |
+
+NF4 的训练后状态导出 payload 为 1286.06 MiB，比对应 BF16 payload 小约 28.2%；运行时还需要固定的 InternVL2-1B 基础快照。整链路峰值显存下降约 25.5%，延迟增加约 16.9%。同一合成输入上，NF4 路线 waypoint 相对 BF16 的 mean absolute difference 为 0.0347、cosine 为 0.999978。INT8 artifact 虽然能够执行，但持久化重载后的 logits cosine 为 -0.4855、top-5 无重合，已明确拒绝。
+
+这些是无 CARLA、无数据集的连通性和相对数值 smoke test，不是驾驶精度或闭环成绩。整链路 CUDA 计时只覆盖模型 forward，排除模型加载、CPU 图像处理和 H2D。使用入口：
+
+- [SimLingo 量化项目首页](simlingo-quantization/README.md)
+- [RTX 3070 Ti 验证记录](simlingo-quantization/docs/validation-rtx3070ti.md)
+- [最终整链路原始结果](simlingo-quantization/results/rtx3070ti/full-pipeline-smoke.json)
+
 ## 获取代码
 
 ```bash
@@ -101,12 +124,13 @@ git clone --recursive --branch master \
 cd Robot_infer
 ```
 
-运行 BEVFusion 时进入 `bevfusion_agx/`，从其[完整构建指南](bevfusion_agx/libraries/New3DSparseConvolution/README.md)开始。运行 BEVFormer 时进入 `bevformer-tensorrt/`，按照其[项目 README](bevformer-tensorrt/README.md)准备环境与模型资产。
+运行 BEVFusion 时进入 `bevfusion_agx/`，从其[完整构建指南](bevfusion_agx/libraries/New3DSparseConvolution/README.md)开始。运行 BEVFormer 时进入 `bevformer-tensorrt/`，按照其[项目 README](bevformer-tensorrt/README.md)准备环境与模型资产。运行 SimLingo 时进入 `simlingo-quantization/`，按其 README 下载固定 PyTorch 权重、导出 NF4 并执行重载与整链路 smoke test。
 
 ## 验证边界
 
 - BEVFusion 当前公开性能来自物理 RTX 3090；RTX 3070 Ti 与 RTX 3090 都是 SM 86，但不能据此假定二者性能相同。
 - BEVFusion 已跑通官方样例与 nuScenes mini_val 81 帧，但本轮没有计算 nuScenes mAP/NDS。
 - BEVFormer 当前图内相机投影和 CAN-bus 元数据在导出时固定，无历史 BEV，输出仍是检测头原始张量。
-- 两个项目都面向 NVIDIA CUDA/TensorRT 环境，不能直接部署到瑞芯微 NPU 或华为昇腾。
+- SimLingo 的 NF4 结果来自固定合成提示与合成 RGB 图像，没有真实样本标签、Bench2Drive 或 CARLA Driving Score；量化节省显存，但没有在 3070 Ti 上加速。
+- 三个项目都面向 NVIDIA CUDA 环境，不能直接部署到瑞芯微 NPU 或华为昇腾。
 - 模型、数据集和第三方代码继续遵循各自许可证；仓库中的源码许可证不自动覆盖模型权重或数据集。

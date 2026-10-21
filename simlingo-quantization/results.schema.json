@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luogantt/Robot_infer/schemas/simlingo-quant-result-v1.json",
+  "title": "SimLingo quantization benchmark result",
+  "type": "object",
+  "required": ["schema_version", "created_at_utc", "status", "run", "environment"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["dry-run", "inspect", "success", "error"]},
+    "run": {
+      "type": "object",
+      "required": ["mode", "upstream_source", "config", "checkpoint", "quantization"],
+      "properties": {
+        "mode": {"enum": ["dry-run", "inspect", "run"]},
+        "upstream_source": {"type": "string"},
+        "upstream_revision": {"type": ["string", "null"]},
+        "config": {"type": "string"},
+        "checkpoint": {"type": "string"},
+        "quantization": {"enum": ["none", "int8", "nf4"]},
+        "device": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "environment": {
+      "type": "object",
+      "required": ["python", "platform"],
+      "additionalProperties": true
+    },
+    "model": {"type": "object", "additionalProperties": true},
+    "quantization": {
+      "type": "object",
+      "properties": {
+        "backend": {"type": "string"},
+        "mode": {"enum": ["none", "int8", "nf4"]},
+        "scope": {"const": "language_model.model transformer linear layers"},
+        "lora_merged": {"type": "boolean"},
+        "linear_layers_replaced": {"type": "integer", "minimum": 0},
+        "vision_bnb_layers": {"const": 0},
+        "driving_head_bnb_layers": {"const": 0}
+      },
+      "additionalProperties": true
+    },
+    "benchmark": {
+      "type": "object",
+      "properties": {
+        "scope": {"const": "language model forward"},
+        "batch_size": {"type": "integer", "minimum": 1},
+        "sequence_length": {"type": "integer", "minimum": 1},
+        "iterations": {"type": "integer", "minimum": 1},
+        "latency_ms": {
+          "type": "object",
+          "required": ["mean", "p50", "p90", "min", "max"],
+          "additionalProperties": {"type": "number", "minimum": 0}
+        },
+        "throughput_tokens_per_second": {"type": "number", "minimum": 0},
+        "peak_cuda_memory_mb": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "type": {"type": "string"},
+        "message": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}
