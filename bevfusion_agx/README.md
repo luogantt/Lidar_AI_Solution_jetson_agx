@@ -2,7 +2,7 @@
 
 `master` 分支默认使用 `BEVFUSION_SPARSE_BACKEND=open`。spconv 2.3.8、cumm 0.7.11 和图执行兼容层源码均已纳入项目，可直接审查、修改、编译生成自己的 `libspconv.so` 与 `libscn.so`。当前源码后端支持 FP16，不支持 INT8；完整相机、融合和检测头仍使用 TensorRT。
 
-自 2026-10-20 起，原 `lg/open-spconv-3070` 实现由 `master` 维护；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Lidar_AI_Solution_jetson_agx/tree/orin-AgX) 分支。
+自 2026-10-20 起，原 `lg/open-spconv-3070` 实现由 `master` 维护；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Robot_infer/tree/orin-AgX) 分支。
 
 这是一个面向部署的 **BEVFusion C++/CUDA 推理项目**：六路相机和 LiDAR 点云分别提取 BEV 特征，完成融合后输出三维检测框。默认路径已经不再加载 NVIDIA 项目附带的预编译闭源 `libspconv.so`；新的底层库由项目内 spconv/cumm 源码生成，并与源码可见的 `libscn.so` 执行层配套使用。它仍然需要 CUDA、cuBLAS 和 TensorRT。
 
@@ -32,8 +32,8 @@
 
 ```bash
 git clone --branch master --single-branch \
-  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
-cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
+  https://github.com/luogantt/Robot_infer.git
+cd Robot_infer/bevfusion_agx
 export PROJECT_ROOT="$PWD"
 ```
 

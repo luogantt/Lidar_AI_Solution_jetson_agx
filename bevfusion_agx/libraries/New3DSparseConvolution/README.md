@@ -25,8 +25,8 @@
 
 ```bash
 git clone --branch master --single-branch \
-  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
-cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
+  https://github.com/luogantt/Robot_infer.git
+cd Robot_infer/bevfusion_agx
 export PROJECT_ROOT="$PWD"
 export SCN_ROOT="$PROJECT_ROOT/libraries/New3DSparseConvolution"
 export BEV_ROOT="$PROJECT_ROOT/CUDA-BEVFusion"

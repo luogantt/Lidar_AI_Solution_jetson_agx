@@ -88,8 +88,8 @@ libraries/New3DSparseConvolution/
 
 ```bash
 git clone --branch master --single-branch \
-  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
-cd Lidar_AI_Solution_jetson_agx/bevfusion_agx
+  https://github.com/luogantt/Robot_infer.git
+cd Robot_infer/bevfusion_agx
 
 export PROJECT_ROOT="$PWD"
 export SCN_ROOT="$PROJECT_ROOT/libraries/New3DSparseConvolution"
@@ -158,7 +158,7 @@ cmake --build "$SCN_ROOT/build-sm86" --parallel 2
 - 可以修改、验证并记录源码版本与构建来源；
 - 完整 BEVFusion 推理不再被一个闭源稀疏二进制文件卡住。
 
-`master` 现在维护这条源码后端；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Lidar_AI_Solution_jetson_agx/tree/orin-AgX) 分支。
+`master` 现在维护这条源码后端；原 Jetson AGX 版本完整保留在 [`orin-AgX`](https://github.com/luogantt/Robot_infer/tree/orin-AgX) 分支。
 
 ## 延伸阅读
 

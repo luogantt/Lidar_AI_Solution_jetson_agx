@@ -10,7 +10,7 @@
 两个目录可以独立安装和运行。BEVFusion 提供完整多传感器三维检测链路；BEVFormer TensorRT 当前交付固定形状的完整网络到检测头原始输出，尚未加入最终框解码、真实视频时序和 nuScenes mAP/NDS 评估。
 
 ```text
-Lidar_AI_Solution_jetson_agx/
+Robot_infer/
 ├── bevfusion_agx/       # 相机 + LiDAR BEVFusion C++/CUDA 推理
 └── bevformer-tensorrt/  # 相机 BEVFormer TensorRT 构建、推理与验证工具
 ```
@@ -51,7 +51,7 @@ BEVFusion 将六路相机图像与 LiDAR 点云投影到统一 BEV 空间，融�
 - [从源码构建动态库和完整推理](bevfusion_agx/libraries/New3DSparseConvolution/README.md)
 - [RTX 3090 验证记录](bevfusion_agx/libraries/New3DSparseConvolution/VALIDATION.md)
 
-原 Jetson AGX 实现保留在 [`orin-AgX`](https://github.com/luogantt/Lidar_AI_Solution_jetson_agx/tree/orin-AgX) 分支。
+原 Jetson AGX 实现保留在 [`orin-AgX`](https://github.com/luogantt/Robot_infer/tree/orin-AgX) 分支。
 
 ## BEVFormer：六相机 TensorRT 推理
 
@@ -97,8 +97,8 @@ BEVFormer 的计时只覆盖 TensorRT engine 提交到 GPU 完成的设备时间
 
 ```bash
 git clone --recursive --branch master \
-  https://github.com/luogantt/Lidar_AI_Solution_jetson_agx.git
-cd Lidar_AI_Solution_jetson_agx
+  https://github.com/luogantt/Robot_infer.git
+cd Robot_infer
 ```
 
 运行 BEVFusion 时进入 `bevfusion_agx/`，从其[完整构建指南](bevfusion_agx/libraries/New3DSparseConvolution/README.md)开始。运行 BEVFormer 时进入 `bevformer-tensorrt/`，按照其[项目 README](bevformer-tensorrt/README.md)准备环境与模型资产。
